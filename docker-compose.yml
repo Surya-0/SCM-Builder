@@ -22,7 +22,7 @@ services:
   scm-builder:
     build: .
     ports:
-      - "8501:8501"
+      - "8502:8502"
     volumes:
       - ./data:/app/data
       - ./config:/app/config
@@ -33,7 +33,7 @@ services:
     depends_on:
       - setup
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8501"]
+      test: ["CMD", "curl", "-f", "http://localhost:8502"]
       interval: 30s
       timeout: 10s
       retries: 3
