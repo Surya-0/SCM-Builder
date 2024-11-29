@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  setup:
+    image: busybox
+    volumes:
+      - ./data:/data
+      - ./config:/config
+      - ./.env.default:/.env.default
+    command: >
+      sh -c "
+        mkdir -p /data &&
+        mkdir -p /config &&
+        chmod 755 /data &&
+        chmod 755 /config &&
+        if [ ! -f /.env ] && [ -f /.env.default ]; then
+          cp /.env.default /.env;
+          echo 'Created .env file from .env.default';
+        fi
+      "
+
+  scm-builder:
+    build: .
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+      - ./.env:/app/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    depends_on:
+      - setup
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
