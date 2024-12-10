@@ -1,0 +1,99 @@
+site_name: Graph Synthesis Documentation
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - toc.integrate
+    - search.suggest
+    - search.highlight
+    - content.tabs.link
+    - content.code.annotation
+    - content.code.copy
+  language: en
+  palette:
+    - scheme: default
+      toggle:
+        icon: material/toggle-switch-off-outline
+        name: Switch to dark mode
+      primary: teal
+      accent: purple
+    - scheme: slate
+      toggle:
+        icon: material/toggle-switch
+        name: Switch to light mode
+      primary: teal
+      accent: lime
+  font:
+    text: Roboto
+    code: Roboto Mono
+
+docs_dir: docs
+site_dir: site
+
+use_directory_urls: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/yourusername/graph-embeddings
+
+static_templates:
+  - 404.html
+
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          setup_commands:
+            - import sys
+            - sys.path.append(".")
+          selection:
+            members: true
+          rendering:
+            show_source: true
+            show_if_no_docstring: true
+  - mkdocs-jupyter
+
+nav:
+  - Home: index.md
+  - Core:
+    - Data Generator: core/data_generator.md
+    - Configuration: core/config.md
+  - Pages:
+    - Generation: pages/generation.md
+    - Visualization: pages/visualization.md
+    - Analysis: pages/analysis.md
+    - Supply Chain Manager: pages/supply_chain_manager.md
+  - Theory:
+    - Network Theory: theory/network_theory.md
+    - Supply Chain Concepts: theory/supply_chain_concepts.md
+    - Temporal Analysis: theory/temporal_analysis.md
+    - Risk Management: theory/risk_management.md
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - admonition
+  - pymdownx.arithmatex:
+      generic: true
+  - footnotes
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.mark
+  - attr_list
+  - pymdownx.emoji:
+      emoji_index: !!python/name:materialx.emoji.twemoji
+      emoji_generator: !!python/name:materialx.emoji.to_svg
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://polyfill.io/v3/polyfill.min.js?features=es6
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+
+copyright: |
+  &copy; 2023 Graph Synthesizer

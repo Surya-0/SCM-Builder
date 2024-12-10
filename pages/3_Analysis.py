@@ -5,6 +5,7 @@ import plotly.express as px
 import os
 from datetime import datetime
 
+st.set_page_config(layout="wide")
 st.title("Supply Chain Analysis")
 
 if not os.path.exists("exports"):
@@ -150,6 +151,14 @@ else:
     else:
         st.warning("No supplier reliability data available for visualization")
 
+    st.write("---")
+
+    st.subheader("Metadata Visualization")
+    metadata_df = pd.read_csv(
+        f"exports/{timestamps[0]}/metadata.csv"
+    )
+    st.write(metadata_df)
+    st.write("---")
     # Additional analysis
     if timestamps:
         st.subheader("Latest Period Analysis")
@@ -166,7 +175,12 @@ else:
                 on_bad_lines='skip'
             )
 
-            col1, col2 = st.columns(2)
+            part_df = pd.read_csv(
+                f"exports/{latest_timestamp}/parts.csv",
+                on_bad_lines='skip'
+            )
+
+            col1, col2, col3 = st.columns(3)
 
             with col1:
                 if not suppliers_df.empty and 'size_category' in suppliers_df.columns:
@@ -180,19 +194,26 @@ else:
                     st.warning("No supplier size data available")
 
             with col2:
-                if not warehouses_df.empty and all(col in warehouses_df.columns for col in ['current_capacity', 'max_capacity', 'type']):
-                    warehouses_df['utilization'] = (warehouses_df['current_capacity'] /
-                                                  warehouses_df['max_capacity'] * 100)
-                    fig_warehouse_util = px.bar(
+                if not warehouses_df.empty and 'type' in warehouses_df.columns:
+                    fig_warehouse_dist = px.pie(
                         warehouses_df,
-                        x='id',
-                        y='utilization',
-                        color='type',
-                        title='Warehouse Capacity Utilization (%)'
+                        names='type',
+                        title='Warehouse Type Distribution'
                     )
-                    st.plotly_chart(fig_warehouse_util)
+                    st.plotly_chart(fig_warehouse_dist)
                 else:
-                    st.warning("No warehouse capacity data available")
+                    st.warning("No warehouse distribution data available")
+
+            with col3:
+                if not part_df.empty and 'type' in part_df.columns:
+                    fig_part_dist = px.pie(
+                        part_df,
+                        names='type',
+                        title='Parts Type Distribution'
+                    )
+                    st.plotly_chart(fig_part_dist)
+                else:
+                    st.warning("No part type data available")
 
         except Exception as e:
             st.error(f"Error loading latest period data: {str(e)}")

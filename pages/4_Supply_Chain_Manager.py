@@ -5,8 +5,9 @@ import numpy as np
 from datetime import datetime, timedelta
 import random
 from config import *
+import os
 
-
+st.set_page_config(layout="wide")
 def initialize_manager_state():
     if 'bulk_update_type' not in st.session_state:
         st.session_state.bulk_update_type = 'suppliers'
@@ -14,6 +15,17 @@ def initialize_manager_state():
         st.session_state.update_preview = None
     if 'editing_mode' not in st.session_state:
         st.session_state.editing_mode = 'bulk'  # 'bulk' or 'individual'
+
+
+def export_data(generator, export_dir):
+    try:
+        if not os.path.exists(export_dir):
+            os.makedirs(export_dir)
+        generator.export_to_csv(generator.temporal_graphs,export_dir)
+        # generator.save_export_to_file()
+        return True, f"Data successfully exported to {export_dir}"
+    except Exception as e:
+        return False, f"Error exporting data: {str(e)}"
 
 def get_size_from_category(category):
     size_ranges = {
@@ -363,9 +375,9 @@ def apply_bulk_update(generator, update_type, preview_data):
                 current_graph.add_node(warehouse_id, **warehouse_data, node_type='warehouse')
                 generator.warehouses[warehouse_data['type']].append(warehouse_data)
         
-        st.write("Before adding new nodes")
+        # st.write("Before adding new nodes")
         connect_new_nodes(generator, update_type, preview_data)
-        st.write("After adding new nodes")
+        # st.write("After adding new nodes")
 
         # Update the temporal graph for the latest period
         generator.temporal_graphs[latest_period] = current_graph
@@ -466,6 +478,25 @@ def main():
                     st.session_state.update_preview = None
                 else:
                     st.error(message)
+    if st.button("Export update to CSV"):
+        if st.session_state.generator is not None:
+            export_dir = st.text_input(
+                "Export Directory",
+                value="exports",
+                help="Specify the directory where the simulation files will be saved"
+            )
+
+            success, message = export_data(st.session_state.generator, export_dir)
+            if success:
+                st.success(message)
+            else:
+                st.error(message)
+
+
+
+
+
+
 
 if __name__ == "__main__":
     main()
