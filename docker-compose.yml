@@ -22,7 +22,7 @@ services:
   scm-builder:
     build: .
     ports:
-      - "8502:8502"
+      - "8700:8502"
     volumes:
       - ./data:/app/data
       - ./config:/app/config
@@ -50,6 +50,6 @@ services:
     # Change the left number (8000) to modify the port on your host machine/VPS
     # Example: "9001:8000" would make the docs available on port 9001
     ports:
-      - "8700:8000"
+      - "8701:8000"
     environment:
       - PYTHONUNBUFFERED=1
