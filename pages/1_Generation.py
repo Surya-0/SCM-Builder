@@ -10,8 +10,8 @@ import plotly.express as px
 from datetime import datetime
 
 load_dotenv()
-# server_url = os.getenv("SERVER_URL", "http://localhost:8000")
-server_url = "https://antelope-worthy-glowworm.ngrok-free.app/api"
+server_url = os.getenv("SERVER_URL", "http://localhost:8000")
+# server_url = "https://antelope-worthy-glowworm.ngrok-free.app/api"
 # server_url = "http://192.168.0.106:8000/api"
 
 
