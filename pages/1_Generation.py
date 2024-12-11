@@ -11,7 +11,7 @@ from datetime import datetime
 
 load_dotenv()
 server_url = os.getenv("SERVER_URL", "http://172.17.149.238/api")
-# server_url = "https://antelope-worthy-glowworm.ngrok-free.app/api"
+# server_url = "https://viable-informally-alpaca.ngrok-free.app/api"
 # server_url = "http://192.168.0.106:8000/api"
 
 
@@ -51,7 +51,7 @@ def export_dictionaries(generator, url, version):
     [temporal_po_demand, temporal_po_cost] = generator.return_simulation_dictionaries_po()
     [temporal_sa_demand, temporal_sa_cost] = generator.return_simulation_dictionaries_sa()
     [temporal_rm_demand, temporal_rm_cost] = generator.return_simulation_dictionaries_rm()
-    supplier_parts = generator.return_suppliers_parts
+    # supplier_parts = generator.return_suppliers_parts
 
     for timestamp, po_demand in temporal_po_demand.items():
         payload_po = {
@@ -119,15 +119,15 @@ def export_dictionaries(generator, url, version):
         requests.post(f"{url}/dicts", json=payload_rm)
 
         # time.sleep(1)
-
-    payload_sup_parts = {
-        "version": version,
-        "timestamp": 0,
-        "type" : "SUPPLIERS_PARTS",
-        "dict" : supplier_parts
-    }
-
-    requests.post(f"{url}/dicts", json=payload_sup_parts)
+    #
+    # payload_sup_parts = {
+    #     "version": version,
+    #     "timestamp": 0,
+    #     "type" : "SUPPLIERS_PARTS",
+    #     "dict" : supplier_parts
+    # }
+    #
+    # requests.post(f"{url}/dicts", json=payload_sup_parts)
 
 
 def export_to_server(generator, url, version, simulation=False):
@@ -152,7 +152,6 @@ def export_to_server(generator, url, version, simulation=False):
         # print(update_ops_dict)
 
         st.write(f"Total operations : {total_ops}")
-        st.write(f"Sending to :  {server_url}")
 
         progress = st.progress(0)
         current_progress = 0
@@ -167,7 +166,15 @@ def export_to_server(generator, url, version, simulation=False):
                     "payload": []
                 }
                 for op in list_ops[i:i + 1000]:
-                    bulk_create_payload['payload'].append(op['payload'])
+                    new_ops = op['payload'].copy()
+                    new_ops['properties'] = {}
+                    # if i == 0:0
+                    #     st.write(op)
+                    for key,val in op['payload']['properties'].items():
+                        if key != 'units_in_chain':
+                            new_ops['properties'][key] = val
+                    # bulk_create_payload['payload'].append(op['payload'])
+                    bulk_create_payload['payload'].append(new_ops)
                 requests.post(f"{url}/schema/live/update", json=bulk_create_payload)
                 time.sleep(1)
 
@@ -186,7 +193,16 @@ def export_to_server(generator, url, version, simulation=False):
                     "payload": []
                 }
                 for op in list_ops[i:i + 1000]:
-                    bulk_update_payload['payload'].append(op['payload'])
+                    new_ops = op['payload'].copy()
+                    new_ops['properties'] = {}
+                    for key, val in op['payload']['properties'].items():
+                        if key != 'units_in_chain':
+                            new_ops['properties'][key] = val
+
+                    # bulk_create_payload['payload'].append(op['payload'])
+                    bulk_update_payload['payload'].append(new_ops)
+
+                    # bulk_update_payload['payload'].append(op['payload'])
                 requests.post(f"{url}/schema/live/update", json=bulk_update_payload)
                 time.sleep(1)
 
