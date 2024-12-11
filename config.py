@@ -52,14 +52,16 @@ FACILITY_TYPES = ['external', 'lam']
 LOCATIONS = ['California', 'Texas', 'Arizona', 'Oregon', 'New York', 'Massachusetts','Washington','Florida', 'Georgia']
 
 # Configuration for random value generation
-INVENTORY_RANGE = (50, 1000)
-DEMAND_RANGE = (10,20)
+
+INVENTORY_RANGE = (700, 1500)
+SAFETY_STOCK_RANGE = (10, 50)
+DEMAND_RANGE = (50, 300)
 IMPORTANCE_FACTOR_RANGE = (0.1, 1.0)
 COST_RANGE = (10, 200)
-CAPACITY_RANGE = (250, 750)
+CAPACITY_RANGE = (1000, 3000)
 RELIABILITY_RANGE = (0.6, 0.99)
 SIZE_RANGE = (100, 1000)
-QUANTITY_RANGE = (1, 20)
+QUANTITY_RANGE = (1, 5)
 TRANSPORTATION_COST_RANGE = (10, 1000)
 TRANSPORTATION_TIME_RANGE = (1, 30)  # in days
 DISTANCE_RANGE = (10, 1000)  # in miles
@@ -95,7 +97,7 @@ SUPPLIER_SIZES = {
 }
 
 WAREHOUSE_SIZES = {
-    'small': {'capacity': (1000, 3000), 'max_parts': 5},
-    'medium': {'capacity': (3001, 6000), 'max_parts': 10},
-    'large': {'capacity': (6001, 10000), 'max_parts': 15}
+    "small": {"capacity": (10000, 15000), "max_parts": 5},
+    "medium": {"capacity": (15001, 20000), "max_parts": 10},
+    "large": {"capacity": (20001, 30000), "max_parts": 15}
 }

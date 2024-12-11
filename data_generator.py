@@ -13,6 +13,7 @@ import pulp
 
 class SupplyChainGenerator:
     def __init__(self, total_variable_nodes=1000, base_periods=12, version="NSS_V1"):
+        self.sel_parts = set()
         self.G = nx.DiGraph()
         self.temporal_graphs = {}
         self.simulation_graphs = {}
@@ -37,11 +38,21 @@ class SupplyChainGenerator:
 
         self.version = version
 
-        self.create_ops = defaultdict(list)  # timestamp : [create operations in that timestamp]
-        self.update_ops = defaultdict(list)  # timestamp : [update operations in that timestamp]
+        self.create_ops = defaultdict(
+            list
+        )  # timestamp : [create operations in that timestamp]
+        self.update_ops = defaultdict(
+            list
+        )  # timestamp : [update operations in that timestamp]
 
-        self.create_simulation_ops = defaultdict(list)  # timestamp : [create operations in that timestamp]
-        self.update_simulation_ops = defaultdict(list)  # timestamp : [update operations in that timestamp]
+
+        self.create_simulation_ops = defaultdict(
+            list
+        )  # timestamp : [create operations in that timestamp]
+        self.update_simulation_ops = defaultdict(
+            list
+        )  # timestamp : [update operations in that timestamp]
+
 
         self.timestamp = 0
 
@@ -67,7 +78,9 @@ class SupplyChainGenerator:
         elif action == "update":
             self.update_simulation_ops[self.simulation_timestamp].append(operation)
 
-    def _log_simulation_edge_operation(self, action, source_id, target_id, properties, edge_type):
+    def _log_simulation_edge_operation(
+        self, action, source_id, target_id, properties, edge_type
+    ):
         """Log edge creation/update operations"""
         operation = {
             "action": action,
@@ -245,10 +258,11 @@ class SupplyChainGenerator:
         # current_date = BASE_DATE + timedelta(days=30 * time_period)
         for part_type, parts in self.parts.items():
             for part in parts:
-                part_id = part['id']
+                part_id = part["id"]
                 new_cost = self._generate_temporal_value(
-                    part['cost'], 'cost', time_period)
-                graph.nodes[part_id]['cost'] = new_cost
+                    part["cost"], "cost", time_period
+                )
+                graph.nodes[part_id]["cost"] = new_cost
                 period_data[f"part_{part_id}_cost"] = new_cost
 
     def _update_edge_attributes(self, graph, time_period, period_data):
@@ -349,6 +363,18 @@ class SupplyChainGenerator:
         self.lw_inventory_levels = defaultdict(dict)
         self.lw_storage_cost = defaultdict(dict)
 
+    def demand_propagation_rm_to_suw(self):
+        self.rm_warehouse = defaultdict(list)
+        self.warehouse_rm = defaultdict(list)
+        # self.suw_safety_stock = defaultdict(list)
+        self.importance_factor_rm = defaultdict(float)
+
+    def demand_propagation_sa_to_saw(self):
+        self.sa_warehouse = defaultdict(list)
+        self.warehouse_sa = defaultdict(list)
+        # self.saw_safety_stock = defaultdict(list)
+        self.importance_factor_sa = defaultdict(float)
+
     def temporal_simulation_storage(self):
         self.temporal_demand_rm = {}  # key : Timestamp,  value : self.demand_rm
 
@@ -356,7 +382,9 @@ class SupplyChainGenerator:
 
         self.temporal_demand_sa = {}  # key : Timestamp, value : self.demand_sa
 
+
         self.temporal_cost_sa_external_facility = {}  # key : Timestamp, value : self.cost_sa_external_facility
+
 
         self.temporal_demand_po = {}  # key : Timestamp, value : self.demand_po
 
@@ -375,6 +403,13 @@ class SupplyChainGenerator:
         self.demand_propagation_sa_to_po()
 
         self.demand_propagation_po_to_lw()
+
+        # ----------------------------------------------
+        self.parts_inventory_level = defaultdict(dict)
+        self.parts_storage_cost = defaultdict(dict)
+        self.demand_propagation_rm_to_suw()
+        self.demand_propagation_sa_to_saw()
+        # ----------------------------------------------
 
         self.opcost_facility = (
             {}
@@ -435,6 +470,17 @@ class SupplyChainGenerator:
             for warehouse in val:
                 self.suppliers_parts[key].update(self.warehouses_parts[warehouse])
 
+
+        for key,val in self.suppliers_parts.items():
+            # print(type(val))
+            self.suppliers_parts[key] = list(val)
+
+
+        # json_data_s_p = json.dumps(self.suppliers_parts)
+        # with open("suppliers_parts_data.json", "w") as outfile:
+        #     outfile.write(json_data_s_p)
+
+
     def generate_data(self):
         """Generate all supply chain data"""
 
@@ -449,7 +495,7 @@ class SupplyChainGenerator:
         self._build_dicts()
         self._calculate_distances()
 
-        print(self.suppliers_parts)
+        # print(self.suppliers_parts)
 
         # Temporal data generation
         self.generate_temporal_data()
@@ -501,39 +547,53 @@ class SupplyChainGenerator:
         for time_period in range(1, self.base_periods):
             current_date = BASE_DATE + timedelta(days=30 * time_period)
             self.timestamp += 1
-            period_data = {'date': current_date}
+            period_data = {"date": current_date}
 
             # Create a new graph snapshot for this period
             period_graph = base_graph.copy()
 
             # Update Business Group attributes
-            bg_revenue = self._generate_temporal_value(self.business_group['revenue'], 'revenue', time_period)
-            period_graph.nodes[self.business_group['id']]['revenue'] = bg_revenue
-            changes = {'revenue': bg_revenue}
-            self._log_node_operation("update", self.business_group['id'], "BUSINESS_GROUP", changes)
-            period_data['business_group_revenue'] = bg_revenue
+            bg_revenue = self._generate_temporal_value(
+                self.business_group["revenue"], "revenue", time_period
+            )
+            period_graph.nodes[self.business_group["id"]]["revenue"] = bg_revenue
+            changes = {"revenue": bg_revenue}
+            self._log_node_operation(
+                "update", self.business_group["id"], "BUSINESS_GROUP", changes
+            )
+            period_data["business_group_revenue"] = bg_revenue
 
             # Update Product Family attributes
             for family in self.product_families:
-                family_revenue = self._generate_temporal_value(family['revenue'], 'revenue', time_period)
-                period_graph.nodes[family['id']]['revenue'] = family_revenue
-                changes = {'revenue': family_revenue}
-                self._log_node_operation("update", family['id'], "PRODUCT_FAMILY", changes)
+                family_revenue = self._generate_temporal_value(
+                    family["revenue"], "revenue", time_period
+                )
+                period_graph.nodes[family["id"]]["revenue"] = family_revenue
+                changes = {"revenue": family_revenue}
+                self._log_node_operation(
+                    "update", family["id"], "PRODUCT_FAMILY", changes
+                )
                 period_data[f"family_{family['id']}_revenue"] = family_revenue
 
             # Update Product Offering attributes
             for offering in self.product_offerings:
-                offering_id = offering['id']
+                offering_id = offering["id"]
                 # Update cost with seasonality
-                new_cost = self._generate_temporal_value(offering['cost'], 'cost', time_period)
-                period_graph.nodes[offering_id]['cost'] = new_cost
+                new_cost = self._generate_temporal_value(
+                    offering["cost"], "cost", time_period
+                )
+                period_graph.nodes[offering_id]["cost"] = new_cost
 
                 # Update demand with seasonality
-                new_demand = self._generate_temporal_value(offering['demand'], 'demand', time_period)
-                period_graph.nodes[offering_id]['demand'] = new_demand
+                new_demand = self._generate_temporal_value(
+                    offering["demand"], "demand", time_period
+                )
+                period_graph.nodes[offering_id]["demand"] = new_demand
 
-                changes = {'demand': new_demand, 'cost': new_cost}
-                self._log_node_operation("update", offering_id, "PRODUCT_OFFERING", changes)
+                changes = {"demand": new_demand, "cost": new_cost}
+                self._log_node_operation(
+                    "update", offering_id, "PRODUCT_OFFERING", changes
+                )
 
                 period_data[f"offering_{offering_id}_cost"] = new_cost
                 period_data[f"offering_{offering_id}_demand"] = new_demand
@@ -541,34 +601,41 @@ class SupplyChainGenerator:
             # Update Warehouse attributes
             for warehouse_type, warehouses in self.warehouses.items():
                 for warehouse in warehouses:
-                    warehouse_id = warehouse['id']
+                    warehouse_id = warehouse["id"]
                     # Update current capacity
                     new_capacity = self._generate_temporal_value(
-                        warehouse['current_capacity'], 'capacity', time_period)
+                        warehouse["current_capacity"], "capacity", time_period
+                    )
 
-                    changes = {'capacity': new_capacity}
-                    self._log_node_operation("update", warehouse_id, "WAREHOUSE", changes)
+                    changes = {"capacity": new_capacity}
+                    self._log_node_operation(
+                        "update", warehouse_id, "WAREHOUSE", changes
+                    )
 
-                    period_graph.nodes[warehouse_id]['current_capacity'] = new_capacity
+                    period_graph.nodes[warehouse_id]["current_capacity"] = new_capacity
                     period_data[f"warehouse_{warehouse_id}_capacity"] = new_capacity
 
             # Update Supplier attributes
             for supplier in self.suppliers:
-                supplier_id = supplier['id']
+                supplier_id = supplier["id"]
                 new_reliability = self._generate_temporal_value(
-                    supplier['reliability'], 'reliability', time_period)
+                    supplier["reliability"], "reliability", time_period
+                )
 
-                changes = {'reliability': new_reliability}
+                changes = {"reliability": new_reliability}
 
                 self._log_node_operation("update", supplier_id, "SUPPLIERS", changes)
-                period_graph.nodes[supplier_id]['reliability'] = new_reliability
+                period_graph.nodes[supplier_id]["reliability"] = new_reliability
                 period_data[f"supplier_{supplier_id}_reliability"] = new_reliability
 
             # Update Part attributes
             for part_type, parts in self.parts.items():
                 for part in parts:
-                    part_id = part['id']
-                    new_cost = self._generate_temporal_value(part['cost'], 'cost', time_period)
+                    part_id = part["id"]
+                    new_cost = self._generate_temporal_value(
+                        part["cost"], "cost", time_period
+                    )
+
 
                     new_units_in_chain = part['units_in_chain'] + 1
                     changes = {'cost': new_cost, 'units_in_chain': new_units_in_chain}
@@ -581,23 +648,29 @@ class SupplyChainGenerator:
 
             # Update edge attributes
             for u, v, attrs in period_graph.edges(data=True):
-                if 'transportation_cost' in attrs:
-                    new_transport_cost = self._generate_temporal_value(attrs['transportation_cost'],
-                                                                       'transportation_cost', time_period)
-                    changes = {'transportation_cost': new_transport_cost}
-                    self._log_edge_operation("update", u, v, changes, "SUPPLIERSToWAREHOUSE")
+                if "transportation_cost" in attrs:
+                    new_transport_cost = self._generate_temporal_value(
+                        attrs["transportation_cost"], "transportation_cost", time_period
+                    )
+                    changes = {"transportation_cost": new_transport_cost}
+                    self._log_edge_operation(
+                        "update", u, v, changes, "SUPPLIERSToWAREHOUSE"
+                    )
 
-                    period_graph.edges[u, v]['transportation_cost'] = new_transport_cost
+                    period_graph.edges[u, v]["transportation_cost"] = new_transport_cost
                     period_data[f"edge_{u}_{v}_transport_cost"] = new_transport_cost
 
-                if 'inventory_level' in attrs:
+                if "inventory_level" in attrs:
                     new_inventory = self._generate_temporal_value(
-                        attrs['inventory_level'], 'inventory', time_period)
+                        attrs["inventory_level"], "inventory", time_period
+                    )
 
-                    changes = {'inventory_level': new_inventory}
-                    self._log_edge_operation("update", u, v, changes, "WAREHOUSEToPARTS")
+                    changes = {"inventory_level": new_inventory}
+                    self._log_edge_operation(
+                        "update", u, v, changes, "WAREHOUSEToPARTS"
+                    )
 
-                    period_graph.edges[u, v]['inventory_level'] = new_inventory
+                    period_graph.edges[u, v]["inventory_level"] = new_inventory
                     period_data[f"edge_{u}_{v}_inventory"] = new_inventory
 
             # Store both the complete graph snapshot and the period data
@@ -709,7 +782,7 @@ class SupplyChainGenerator:
                     self.G.add_node(
                         po_data["id"], **po_data, node_type="product_offering"
                     )
-                    self.demand_po[po_data["id"]] = 100
+                    self.demand_po[po_data["id"]] = 10
                     po_counter += 1
 
     def _generate_warehouses(self):
@@ -728,10 +801,18 @@ class SupplyChainGenerator:
                     "size_category": size_category,
                     "max_capacity": random.randint(*capacity_range),
                     "current_capacity": 0,
-                    "safety_stock": random.randint(*INVENTORY_RANGE),
+                    "safety_stock": random.randint(*SAFETY_STOCK_RANGE),
                     "max_parts": WAREHOUSE_SIZES[size_category]["max_parts"],
                 }
                 self.warehouses[w_type].append(warehouse_data)
+                # if warehouse_data["type"] == "supplier":
+                #     self.suw_safety_stock[warehouse_data["id"]] = warehouse_data[
+                #         "safety_stock"
+                #     ]
+                # elif warehouse_data["type"] == "subassembly":
+                #     self.saw_safety_stock[warehouse_data["id"]] = warehouse_data[
+                #         "safety_stock"
+                #     ]
                 self.G.add_node(
                     warehouse_data["id"], **warehouse_data, node_type="warehouse"
                 )
@@ -779,6 +860,7 @@ class SupplyChainGenerator:
                 subtype = random.choice(PART_TYPES[p_type])
 
                 part_data = {
+
                     'id': f'P_{counter:03d}',
                     'name': f'Part_{counter}',
                     'type': p_type,
@@ -789,6 +871,7 @@ class SupplyChainGenerator:
                     'valid_till': valid_till,
                     'expiry': random.randint(*EXPIRY),
                     'units_in_chain': random.randint(*UNITS_IN_CHAIN)
+
                 }
 
                 copy_part_data = part_data.copy()
@@ -800,9 +883,15 @@ class SupplyChainGenerator:
                 )
                 if p_type == "raw":
                     self.cost_rm[part_data["id"]] = part_data["cost"]
+                    self.importance_factor_rm[part_data["id"]] = part_data[
+                        "importance_factor"
+                    ]
                 self.parts[p_type].append(part_data)
                 if p_type == "subassembly":
                     self.cost_sa_external_facility[part_data["id"]] = part_data["cost"]
+                    self.importance_factor_sa[part_data["id"]] = part_data[
+                        "importance_factor"
+                    ]
                 self.G.add_node(part_data["id"], **part_data, node_type="part")
                 self._log_node_operation(
                     "create", part_data["id"], "PARTS", copy_part_data
@@ -900,6 +989,7 @@ class SupplyChainGenerator:
                         "lead_time": random.uniform(*TRANSPORTATION_TIME_RANGE),
                     }
 
+
                     self.suppliers_warehouses[supplier['id']].add(warehouse['id'])
 
                     self.G.add_edge(supplier['id'], warehouse['id'], **edge_data)
@@ -907,6 +997,7 @@ class SupplyChainGenerator:
                                              "SUPPLIERSToWAREHOUSE")
                     self._log_simulation_edge_operation("create", supplier['id'], warehouse['id'], edge_data,
                                                         "SUPPLIERSToWAREHOUSE")
+
 
             # Connect to subassembly warehouses if supplier provides subassemblies
             if any(
@@ -925,34 +1016,134 @@ class SupplyChainGenerator:
                         ),
                         "lead_time": random.uniform(*TRANSPORTATION_TIME_RANGE),
                     }
-                    self.G.add_edge(supplier['id'], warehouse['id'], **edge_data)
 
-                    self.suppliers_warehouses[supplier['id']].add(warehouse['id'])
+                    self.G.add_edge(supplier["id"], warehouse["id"], **edge_data)
+                    self._log_edge_operation(
+                        "create",
+                        supplier["id"],
+                        warehouse["id"],
+                        edge_data,
+                        "SUPPLIERSToWAREHOUSE",
+                    )
+                    self._log_simulation_edge_operation(
+                        "create",
+                        supplier["id"],
+                        warehouse["id"],
+                        edge_data,
+                        "SUPPLIERSToWAREHOUSE",
+                    )
 
-                    self._log_edge_operation("create", supplier['id'], warehouse['id'], edge_data,
-                                             "SUPPLIERSToWAREHOUSE")
-                    self._log_simulation_edge_operation("create", supplier['id'], warehouse['id'], edge_data,
-                                                        "SUPPLIERSToWAREHOUSE")
+    # def _connect_warehouses_to_parts(self):
+    #     for warehouse in sum(
+    #         [self.warehouses["supplier"], self.warehouses["subassembly"]], []
+    #     ):  # update on selection of warehouses
+    #         max_parts = warehouse["max_parts"]
+    #         available_capacity = warehouse["max_capacity"]
+    #         current_inventory = 0
+
+    #         # Select random parts based on warehouse size
+    #         possible_parts = (
+    #             self.parts["raw"]
+    #             if warehouse["type"] == "supplier"
+    #             else self.parts["subassembly"]
+    #         )
+    #         selected_parts = random.sample(
+    #             possible_parts, min(max_parts, len(possible_parts))
+
+    #         for part in selected_parts:
+    #             # Calculate inventory level ensuring we don't exceed capacity
+
+    #             max_possible_inventory = min(
+    #                 random.randint(*INVENTORY_RANGE),
+    #                 available_capacity - current_inventory,
+    #             )
+
+    #             if max_possible_inventory <= 0:
+    #                 continue
+    #             self.sel_parts.add(part["id"])
+    #             inventory_level = max_possible_inventory
+    #             current_inventory += inventory_level
+
+    #             edge_data = {
+    #                 "inventory_level": inventory_level,
+    #                 "storage_cost": random.uniform(*COST_RANGE),
+    #             }
+    #             if part["type"] == 'raw':
+    #                 self.rm_warehouse[part['id']].append(warehouse['id'])
+    #                 self.warehouse_rm[warehouse['id']].append(part['id'])
+    #             else:
+    #                 self.warehouse_sa[warehouse['id']].append(part['id'])
+    #                 self.sa_warehouse[part['id']].append(warehouse['id'])
+
+    #             self.G.add_edge(warehouse['id'], part['id'], **edge_data)
+    #             self._log_edge_operation("create", warehouse['id'], part['id'], edge_data, "WAREHOUSEToPARTS")
+    #             self._log_simulation_edge_operation("create", warehouse['id'], part['id'], edge_data,
+    #                                                 "WAREHOUSEToPARTS")
+
+    #             # Update warehouse current capacity
+    #             self.G.nodes[warehouse["id"]]["current_capacity"] = current_inventory
+    #             changes = {"current_capacity": current_inventory}
+    #             self._log_node_operation(
+    #                 "update", warehouse["id"], "WAREHOUSE", changes
+    #             )
+    #             self._log_simulation_node_operation(
+    #                 "update", warehouse["id"], "WAREHOUSE", changes
+    #             )
+
 
     def _connect_warehouses_to_parts(self):
+        # Track which parts have been connected
+        connected_raw_parts = set()
+        connected_sa_parts = set()
+
+        # First pass: distribute parts across warehouses while respecting constraints
         for warehouse in sum(
+
                 [self.warehouses["supplier"], self.warehouses["subassembly"]], []
         ):  # update on selection of warehouses
+
             max_parts = warehouse["max_parts"]
             available_capacity = warehouse["max_capacity"]
             current_inventory = 0
 
-            # Select random parts based on warehouse size
+            # Get unconnected parts first, then connected ones if space remains
             possible_parts = (
                 self.parts["raw"]
                 if warehouse["type"] == "supplier"
                 else self.parts["subassembly"]
             )
-            selected_parts = random.sample(
-                possible_parts, min(max_parts, len(possible_parts))
+            connected_parts = (
+                connected_raw_parts
+                if warehouse["type"] == "supplier"
+                else connected_sa_parts
             )
+            unconnected_parts = [
+                p for p in possible_parts if p["id"] not in connected_parts
+            ]
 
-            for part in selected_parts:
+            # Prioritize unconnected parts, then add connected ones if space remains
+            parts_to_connect = []
+            if unconnected_parts:
+                parts_to_connect.extend(
+                    random.sample(
+                        unconnected_parts, min(max_parts, len(unconnected_parts))
+                    )
+                )
+
+            remaining_slots = max_parts - len(parts_to_connect)
+            if remaining_slots > 0 and possible_parts:
+                connected_part_list = [
+                    p for p in possible_parts if p["id"] in connected_parts
+                ]
+                if connected_part_list:
+                    parts_to_connect.extend(
+                        random.sample(
+                            connected_part_list,
+                            min(remaining_slots, len(connected_part_list)),
+                        )
+                    )
+
+            for part in parts_to_connect:
                 # Calculate inventory level ensuring we don't exceed capacity
                 max_possible_inventory = min(
                     random.randint(*INVENTORY_RANGE),
@@ -962,6 +1153,7 @@ class SupplyChainGenerator:
                 if max_possible_inventory <= 0:
                     continue
 
+                self.sel_parts.add(part["id"])
                 inventory_level = max_possible_inventory
                 current_inventory += inventory_level
 
@@ -970,14 +1162,39 @@ class SupplyChainGenerator:
                     "storage_cost": random.uniform(*COST_RANGE),
                 }
 
-                self.warehouses_parts[warehouse['id']].add(part['id'])
-                self.G.add_edge(warehouse['id'], part['id'], **edge_data)
-                self._log_edge_operation("create", warehouse['id'], part['id'], edge_data, "WAREHOUSEToPARTS")
-                self._log_simulation_edge_operation("create", warehouse['id'], part['id'], edge_data,
-                                                    "WAREHOUSEToPARTS")
+
+                if part["type"] == "raw":
+                    self.rm_warehouse[part["id"]].append(warehouse["id"])
+                    self.warehouse_rm[warehouse["id"]].append(part["id"])
+                    connected_raw_parts.add(part["id"])
+                else:
+                    self.warehouse_sa[warehouse["id"]].append(part["id"])
+                    self.sa_warehouse[part["id"]].append(warehouse["id"])
+                    connected_sa_parts.add(part["id"])
+
+                self.parts_inventory_level[part["id"]][
+                    warehouse["id"]
+                ] = inventory_level
+
+                self.parts_storage_cost[part["id"]][warehouse["id"]] = edge_data[
+                    "storage_cost"
+                ]
+
+                self.G.add_edge(warehouse["id"], part["id"], **edge_data)
+                self._log_edge_operation(
+                    "create", warehouse["id"], part["id"], edge_data, "WAREHOUSEToPARTS"
+                )
+                self._log_simulation_edge_operation(
+                    "create", warehouse["id"], part["id"], edge_data, "WAREHOUSEToPARTS"
+                )
+
 
                 # Update warehouse current capacity
                 self.G.nodes[warehouse["id"]]["current_capacity"] = current_inventory
+                for w in self.warehouses["supplier"]:
+                    if w["id"] == warehouse["id"]:
+                        w["current_capacity"] = current_inventory
+
                 changes = {"current_capacity": current_inventory}
                 self._log_node_operation(
                     "update", warehouse["id"], "WAREHOUSE", changes
@@ -985,6 +1202,92 @@ class SupplyChainGenerator:
                 self._log_simulation_node_operation(
                     "update", warehouse["id"], "WAREHOUSE", changes
                 )
+
+        # Second pass: connect any remaining unconnected parts
+        for part_type in ["raw", "subassembly"]:
+            connected_parts = (
+                connected_raw_parts if part_type == "raw" else connected_sa_parts
+            )
+            unconnected = [
+                p for p in self.parts[part_type] if p["id"] not in connected_parts
+            ]
+
+            if unconnected:
+                warehouse_type = "supplier" if part_type == "raw" else "subassembly"
+                available_warehouses = [
+                    w
+                    for w in self.warehouses[warehouse_type]
+                    if len(self.warehouse_rm.get(w["id"], [])) < w["max_parts"]
+                ]
+
+                for part in unconnected:
+                    if not available_warehouses:
+                        # st.warning(f"Unable to connect all {part_type} parts due to warehouse constraints")
+                        break
+
+                    # Find warehouse with most remaining capacity
+                    warehouse = max(
+                        available_warehouses,
+                        key=lambda w: w["max_capacity"]
+                        - self.G.nodes[w["id"]]["current_capacity"],
+                    )
+
+                    current_inventory = self.G.nodes[warehouse["id"]][
+                        "current_capacity"
+                    ]
+                    max_possible_inventory = min(
+                        random.randint(*INVENTORY_RANGE),
+                        warehouse["max_capacity"] - current_inventory,
+                    )
+
+                    if max_possible_inventory <= 0:
+                        available_warehouses.remove(warehouse)
+                        continue
+
+                    inventory_level = max_possible_inventory
+                    current_inventory += inventory_level
+
+                    edge_data = {
+                        "inventory_level": inventory_level,
+                        "storage_cost": random.uniform(*COST_RANGE),
+                    }
+
+                    if part["type"] == "raw":
+                        self.rm_warehouse[part["id"]].append(warehouse["id"])
+                        self.warehouse_rm[warehouse["id"]].append(part["id"])
+                    else:
+                        self.warehouse_sa[warehouse["id"]].append(part["id"])
+                        self.sa_warehouse[part["id"]].append(warehouse["id"])
+
+                    self.G.add_edge(warehouse["id"], part["id"], **edge_data)
+                    self._log_edge_operation(
+                        "create",
+                        warehouse["id"],
+                        part["id"],
+                        edge_data,
+                        "WAREHOUSEToPARTS",
+                    )
+                    self._log_simulation_edge_operation(
+                        "create",
+                        warehouse["id"],
+                        part["id"],
+                        edge_data,
+                        "WAREHOUSEToPARTS",
+                    )
+
+                    self.G.nodes[warehouse["id"]][
+                        "current_capacity"
+                    ] = current_inventory
+                    changes = {"current_capacity": current_inventory}
+                    self._log_node_operation(
+                        "update", warehouse["id"], "WAREHOUSE", changes
+                    )
+                    self._log_simulation_node_operation(
+                        "update", warehouse["id"], "WAREHOUSE", changes
+                    )
+
+                    if current_inventory >= warehouse["max_capacity"] * 0.9:  # 90% full
+                        available_warehouses.remove(warehouse)
 
     def _connect_parts_to_facilities(self):
         # Connect raw parts to external facilities to create subassemblies using the dictionary of values which stores
@@ -1003,17 +1306,19 @@ class SupplyChainGenerator:
                         "lead_time": random.uniform(*TRANSPORTATION_TIME_RANGE),
                     }
 
-                    self.G.add_edge(rm['id'], facility['id'], **edge_data)
-                    self._log_simulation_edge_operation("create", rm['id'], facility['id'], edge_data,
-                                                        "PARTSToFACILITY")
-                    self._log_edge_operation("create", rm['id'], facility['id'], edge_data, "PARTSToFACILITY")
+                    self.G.add_edge(rm["id"], facility["id"], **edge_data)
+                    self._log_simulation_edge_operation(
+                        "create", rm["id"], facility["id"], edge_data, "PARTSToFACILITY"
+                    )
+                    self._log_edge_operation(
+                        "create", rm["id"], facility["id"], edge_data, "PARTSToFACILITY"
+                    )
 
                     # Ram: storing the rm-ext_facility edges in a dictionary
                     if facility["id"] in self.ext_facility_raw_material:
                         self.ext_facility_raw_material[facility["id"]].append(
                             (rm["id"], edge_data["quantity"])
                         )
-
                     else:
                         self.ext_facility_raw_material[facility["id"]] = []
                         self.ext_facility_raw_material[facility["id"]].append(
@@ -1061,7 +1366,6 @@ class SupplyChainGenerator:
             # raw_parts = random.sample(
             #     self.parts['raw'],
             #     random.randint(2, max(3, len(self.parts['raw'])//10))
-            # )
             #
             #
             # for part in raw_parts:
@@ -1080,7 +1384,6 @@ class SupplyChainGenerator:
         #     subassembly_parts = random.sample(
         #         self.parts['subassembly'],
         #         random.randint(2, max(3, len(self.parts['subassembly']) // 2))
-        #     )
         #     for part in subassembly_parts:
         #         edge_data = {
         #             'quantity': random.randint(*QUANTITY_RANGE),
@@ -1113,11 +1416,13 @@ class SupplyChainGenerator:
                         "lead_time": random.uniform(*TRANSPORTATION_TIME_RANGE),
                     }
 
+
                     self.lam_facility_sub_assembly[facility['id']].append((part['id'], edge_data['quantity']))
                     self.G.add_edge(part['id'], facility['id'], **edge_data)
                     self._log_edge_operation("create", part['id'], facility['id'], edge_data, "PARTSToFACILITY")
                     self._log_simulation_edge_operation("create", part['id'], facility['id'], edge_data,
                                                         "PARTSToFACILITY")
+
 
                 # Connect the LAM facility to the product offering
                 edge_data = {
@@ -1134,11 +1439,13 @@ class SupplyChainGenerator:
                     "max_capacity"
                 ]
 
+
                 self.G.add_edge(facility['id'], product['id'], **edge_data)
                 self._log_edge_operation("create", facility['id'], product['id'], edge_data,
                                          "FACILITYToPRODUCT_OFFERING")
                 self._log_simulation_edge_operation("create", facility['id'], product['id'], edge_data,
                                                     "FACILITYToPRODUCT_OFFERING")
+
 
         # print("The mapping from product offering to Lam facility  : ", self.po_Lam_facility)
         # print("The max capacity for each product offering wrt the Lam facility : ",
@@ -1231,6 +1538,7 @@ class SupplyChainGenerator:
                 if po["name"] in PRODUCT_OFFERINGS[pf["name"]]
             ]
             for po in family_offerings:
+
                 self.G.add_edge(pf['id'], po['id'], type='hierarchy')
                 self._log_edge_operation("create", pf['id'], po['id'], {}, "PRODUCT_FAMILYToPRODUCT_OFFERING")
                 self._log_simulation_edge_operation("create", pf['id'], po['id'], {},
@@ -1296,11 +1604,15 @@ class SupplyChainGenerator:
             demand = self.demand_po[offering_id]
             cost = self.cost_po[offering_id]
 
+
             self.simul_graph_copy.nodes[offering_id]['cost'] = cost / demand
+
             po_revenue = cost
             self.po_revenue[offering_id] = po_revenue
-            changes = {'cost': cost / demand}
-            self._log_simulation_node_operation("update", offering_id, "PRODUCT_OFFERING", changes)
+            changes = {"cost": cost / demand}
+            self._log_simulation_node_operation(
+                "update", offering_id, "PRODUCT_OFFERING", changes
+            )
 
             # copy_graph.nodes[offering_id]['calculated_revenue'] = po_revenue
             # print(f"Product Offering {offering_id}: Revenue = {po_revenue}")
@@ -1314,9 +1626,11 @@ class SupplyChainGenerator:
                     offering_id = offering["id"]
                     PF_revenue += self.po_revenue[offering_id]
 
+
             self.simul_graph_copy.nodes[family_id]['revenue'] = PF_revenue
             changes = {'revenue': PF_revenue}
             self._log_simulation_node_operation("update", family_id, "PRODUCT_FAMILY", changes)
+
             # print(f"Product Family {family_id}: Revenue = {PF_revenue}")
 
         business_group_id = self.business_group["id"]
@@ -1370,7 +1684,7 @@ class SupplyChainGenerator:
                     "max_capacity_ext_facs": self.sum_max_capacity_ext_facility_for_sa[
                         sa
                     ],
-                    "bottleneck_factor": bottleneck_factor
+                    "bottleneck_factor": bottleneck_factor,
                 }
 
         return self.bottleneck_details_sa
@@ -1385,8 +1699,8 @@ class SupplyChainGenerator:
 
             self.cost_sa_external_facility[sa] = sum_op_costs
 
-            self.simul_graph_copy.nodes[sa]['cost'] = self.cost_sa_external_facility[sa]
-            changes = {'cost': sum_op_costs}
+            self.simul_graph_copy.nodes[sa]["cost"] = self.cost_sa_external_facility[sa]
+            changes = {"cost": sum_op_costs}
 
             self._log_simulation_node_operation("update", sa, "PARTS", changes)
 
@@ -1422,8 +1736,10 @@ class SupplyChainGenerator:
                 quantity = rm[1]
                 sum_qc_products += quantity * self.cost_rm[rm_id]
 
+
             self.cost_external_facility_rm[ef] = (self.demand_external_facility[ef] * sum_qc_products) + \
                                                  self.opcost_facility[ef]
+
 
     def simulate_lam_fac_po_demand(self):
         """
@@ -1463,7 +1779,7 @@ class SupplyChainGenerator:
                     "max_capacity_lam_facs": self.sum_max_capacity_lam_facility_for_po[
                         po
                     ],
-                    "bottleneck_factor": bottleneck_factor
+                    "bottleneck_factor": bottleneck_factor,
                 }
 
         return self.bottleneck_details_po
@@ -1517,9 +1833,11 @@ class SupplyChainGenerator:
             for fac in fac_list:
                 facility_id = fac[0]
                 self.cost_po[po] += self.cost_LF[facility_id]
-            self.simul_graph_copy.nodes[po]['cost'] = self.cost_po[po]
-            changes = {'cost': self.cost_po}
-            self._log_simulation_node_operation("update", po, "PRODUCT_OFFERING", changes)
+            self.simul_graph_copy.nodes[po]["cost"] = self.cost_po[po]
+            changes = {"cost": self.cost_po}
+            self._log_simulation_node_operation(
+                "update", po, "PRODUCT_OFFERING", changes
+            )
 
         # print("The cost for each product offering is : ",self.cost_po)
 
@@ -1529,7 +1847,9 @@ class SupplyChainGenerator:
         self.temporal_cost_rm[self.simulation_timestamp] = self.cost_rm
 
         self.temporal_demand_sa[self.simulation_timestamp] = self.demand_sa
-        self.temporal_cost_sa_external_facility[self.simulation_timestamp] = self.cost_sa_external_facility
+        self.temporal_cost_sa_external_facility[self.simulation_timestamp] = (
+            self.cost_sa_external_facility
+        )
 
         self.temporal_demand_po[self.simulation_timestamp] = self.demand_po
         self.temporal_cost_po[self.simulation_timestamp] = self.cost_po
@@ -1538,6 +1858,20 @@ class SupplyChainGenerator:
         """
         Creates temporal simulations for all time periods, similar to generate_temporal_data
         """
+
+        if self.G:
+            print("Generating temporal simulation")
+        else:
+            print("Lets generate the base graph first")
+            self._generate_business_hierarchy()
+            self._generate_suppliers()
+            self._generate_warehouses()
+            self._generate_facilities()
+            self._generate_parts()
+
+            self._generate_edges()
+            self._build_dicts()
+
         self.temporal_simulation_graphs = {}
         base_simulation = self.create_base_simulation()
         self.temporal_simulation_graphs[0] = base_simulation
@@ -1604,12 +1938,14 @@ class SupplyChainGenerator:
         """
         # Adjust Product Offering demand based on temporal factors
         for offering in self.product_offerings:
+
             base_demand = offering['demand']
             temporal_demand = self._generate_temporal_value(base_demand, 'demand', time_period)
             self.demand_po[offering['id']] = math.ceil(temporal_demand)
             self.simul_graph_copy.nodes[offering['id']]['demand'] = math.ceil(temporal_demand)
             changes = {'demand': temporal_demand}
             self._log_simulation_node_operation("update", offering['id'], "PRODUCT_OFFERING", changes)
+
 
         # if time_period >= TEMPORAL_VARIATION['quantity']['start_after']:
         #     for u, v, edge_data in self.simul_graph_copy.edges(data=True):
@@ -1637,6 +1973,7 @@ class SupplyChainGenerator:
         for facility_type in ["lam", "external"]:
             facilities = self.facilities.get(facility_type, [])
             for facility in facilities:
+
                 base_cost = self.opcost_facility[facility['id']]
                 temporal_cost = self._generate_temporal_value(base_cost, 'operating_cost', time_period)
                 self.opcost_facility[facility['id']] = temporal_cost
@@ -1644,10 +1981,12 @@ class SupplyChainGenerator:
                 changes = {'operating_cost': temporal_cost}
                 self._log_simulation_node_operation("update", facility['id'], "FACILITY", changes)
 
+
         # Adjust raw material costs
         for part_type, parts in self.parts.items():
             if part_type == "raw":
                 for part in parts:
+
                     base_cost = part['cost']
                     temporal_cost = self._generate_temporal_value(base_cost, 'cost', time_period)
                     self.cost_rm[part['id']] = temporal_cost
@@ -1658,15 +1997,18 @@ class SupplyChainGenerator:
                     changes = {'cost': temporal_cost}
                     self._log_simulation_node_operation("update", part['id'], "PARTS", changes)
 
+
         # Adjust facility capacities
         for po, fac_list in self.po_Lam_facility.items():
             new_list = []
             for fac in fac_list:
                 facility_id = fac[0]
                 base_capacity = fac[1]
-                temporal_capacity = math.ceil(self._generate_temporal_value(
-                    base_capacity, "capacity", time_period
-                ))
+                temporal_capacity = math.ceil(
+                    self._generate_temporal_value(
+                        base_capacity, "capacity", time_period
+                    )
+                )
                 self.simul_graph_copy.nodes[facility_id][
                     "max_capacity"
                 ] = temporal_capacity
@@ -1693,11 +2035,17 @@ class SupplyChainGenerator:
                 facility_id = fac[0]
                 base_capacity = fac[1]
 
-                temporal_capacity = self._generate_temporal_value(base_capacity, 'capacity', time_period)
+                temporal_capacity = self._generate_temporal_value(
+                    base_capacity, "capacity", time_period
+                )
                 new_list.append((facility_id, temporal_capacity))
-                self.simul_graph_copy.nodes[facility_id]['max_capacity'] = temporal_capacity
-                changes = {'max_capacity': temporal_capacity}
-                self._log_simulation_node_operation("update", facility_id, "FACILITY", changes)
+                self.simul_graph_copy.nodes[facility_id][
+                    "max_capacity"
+                ] = temporal_capacity
+                changes = {"max_capacity": temporal_capacity}
+                self._log_simulation_node_operation(
+                    "update", facility_id, "FACILITY", changes
+                )
 
             self.subassembly_ext_facility[sa] = new_list
 
@@ -1707,6 +2055,121 @@ class SupplyChainGenerator:
             self.sum_max_capacity_ext_facility_for_sa[sa] = sum(
                 fac[1] for fac in fac_list
             )
+
+    def simulate_disaster(self, disaster_type, impact_factor=2.0, affected_nodes_percentage=0.3):
+        """
+        Simulate a disaster's impact on the supply chain.
+
+        Args:
+            disaster_type (str): Type of disaster impact ('cost', 'demand', or 'capacity')
+            impact_factor (float): Multiplier for the impact (e.g., 2.0 doubles the affected values)
+            affected_nodes_percentage (float): Percentage of nodes to be affected (0.0 to 1.0)
+        """
+        if disaster_type not in ['cost', 'demand', 'capacity']:
+            raise ValueError("disaster_type must be one of: 'cost', 'demand', 'capacity'")
+
+        # Store pre-disaster state
+        pre_disaster_cost_po = self.cost_po.copy()
+        pre_disaster_demand_po = self.demand_po.copy()
+
+        self.simulation_timestamp += 1
+        self.temporal_simulation_graphs[self.simulation_timestamp] = self.temporal_simulation_graphs[
+            self.simulation_timestamp - 1].copy()
+
+        if disaster_type == 'cost':
+            # Increase costs of randomly selected raw materials
+            raw_materials = list(self.parts['raw'])
+            num_affected = int(len(raw_materials) * affected_nodes_percentage)
+            affected_materials = random.sample(raw_materials, num_affected)
+
+            for material in affected_materials:
+                material_id = material['id']
+                old_cost = self.temporal_simulation_graphs[self.simulation_timestamp - 1].nodes[material_id]['cost']
+                new_cost = old_cost * impact_factor
+
+                # Log the cost increase
+                self._log_simulation_node_operation(
+                    "update",
+                    material_id,
+                    "raw_material",
+                    {"cost": new_cost}
+                )
+                self.temporal_simulation_graphs[self.simulation_timestamp].nodes[material_id]['cost'] = new_cost
+                self.cost_rm[material_id] = new_cost
+
+        elif disaster_type == 'demand':
+            # Increase demand for randomly selected product offerings
+            num_affected = int(len(self.product_offerings) * affected_nodes_percentage)
+            affected_offerings = random.sample(self.product_offerings, num_affected)
+
+            for offering in affected_offerings:
+                offering_id = offering['id']
+                old_demand = self.temporal_simulation_graphs[self.simulation_timestamp - 1].nodes[offering_id]['demand']
+                new_demand = old_demand * impact_factor
+
+                # Log the demand increase
+                self._log_simulation_node_operation(
+                    "update",
+                    offering_id,
+                    "product_offering",
+                    {"demand": new_demand}
+                )
+                self.temporal_simulation_graphs[self.simulation_timestamp].nodes[offering_id]['demand'] = new_demand
+                self.demand_po[offering_id] = new_demand
+
+        elif disaster_type == 'capacity':
+            # Reduce capacity of randomly selected facilities
+            all_facilities = self.facilities['external'] + self.facilities['lam']
+            num_affected = int(len(all_facilities) * affected_nodes_percentage)
+            affected_facilities = random.sample(all_facilities, num_affected)
+
+            for facility in affected_facilities:
+                facility_id = facility['id']
+                old_capacity = self.temporal_simulation_graphs[self.simulation_timestamp - 1].nodes[facility_id][
+                    'max_capacity']
+                new_capacity = old_capacity / impact_factor  # Reduce capacity by dividing
+
+                # Log the capacity reduction
+                self._log_simulation_node_operation(
+                    "update",
+                    facility_id,
+                    "facility",
+                    {"max_capacity": new_capacity}
+                )
+                self.temporal_simulation_graphs[self.simulation_timestamp].nodes[facility_id][
+                    'max_capacity'] = new_capacity
+
+        # Propagate the changes through the supply chain
+        self.simulate_ext_fac_sa_demand()
+        self.simulate_rm_ext_fac_demand()
+        self.simulate_lam_fac_po_demand()
+        self.simulate_sa_lam_fac_demand()
+        self.simulate_ext_fac_sa_cost()
+        self.simulate_rm_ext_fac_cost()
+        self.simulate_sa_lam_fac_cost()
+        self.simulate_lam_fac_po_cost()
+        # self.simulate_po_warehouse_storage()
+
+        # Run bottleneck detection
+        self.bottleneck_detection_ext_fac_sa(timestamp=self.simulation_timestamp)
+        self.bottleneck_detection_lam_fac_po(timestamp=self.simulation_timestamp)
+
+        # Store the temporal data
+        self.temporal_demand_rm[self.simulation_timestamp] = self.demand_rm.copy()
+        self.temporal_cost_rm[self.simulation_timestamp] = self.cost_rm.copy()
+        self.temporal_demand_sa[self.simulation_timestamp] = self.demand_sa.copy()
+        self.temporal_cost_sa_external_facility[self.simulation_timestamp] = self.cost_sa_external_facility.copy()
+        self.temporal_demand_po[self.simulation_timestamp] = self.demand_po.copy()
+        self.temporal_cost_po[self.simulation_timestamp] = self.cost_po.copy()
+
+        return {
+            'disaster_type': disaster_type,
+            'impact_factor': impact_factor,
+            'affected_nodes_percentage': affected_nodes_percentage,
+            'timestamp': self.simulation_timestamp,
+            'pre_disaster_cost_po': pre_disaster_cost_po,
+            'pre_disaster_demand_po': pre_disaster_demand_po
+        }
 
     def simulate_po_warehouse_storage(self):
         """
@@ -1745,7 +2208,7 @@ class SupplyChainGenerator:
 
         # creation of all variables for optimization
         x = pulp.LpVariable.dicts(
-            "storage",
+            "",
             ((w, p) for p, warehouses_list in storing.items() for w in warehouses_list),
             lowBound=0,
             cat=pulp.LpInteger,
@@ -1771,8 +2234,8 @@ class SupplyChainGenerator:
             current_capacity = warehouses[w]["current_capacity"]
             max_capacity = warehouses[w]["max_capacity"]
             prob += (
-                    pulp.lpSum([x[(w, p)] for p in connection[w]]) + current_capacity
-                    <= max_capacity
+                pulp.lpSum([x[(w, p)] for p in connection[w]]) + current_capacity
+                <= max_capacity
             )
 
         # solving
@@ -1795,10 +2258,111 @@ class SupplyChainGenerator:
                 for po, demand in po_allocation.items():
                     sum_ += demand
                 self.G.nodes[warehouse]["current_capacity"] += sum_
+                for w in self.warehouses["lam"]:
+                    if w["id"] == warehouse:
+                        w["current_capacity"] -= sum_
 
             return results
 
         return pulp.LpStatus[prob.status]
+
+    def simulate_raw_warehouse_storage(self):
+        warehouses_supplier = {}
+        for wh in self.warehouses["supplier"]:
+            warehouses_supplier[wh["id"]] = {
+                "max_capacity": wh["max_capacity"],
+                "current_capacity": wh["current_capacity"],
+                "safety_stock": wh["safety_stock"]
+            }
+
+        part_safety_stocks = {}  # to store each part-warehouse pair's safety stock
+
+        for warehouse in warehouses_supplier:
+            sum_ = 0
+            warehouse_safety_stock = warehouses_supplier[warehouse]["safety_stock"]
+            rm_list = self.warehouse_rm[warehouse]
+
+            # Calculate total importance factor sum
+            for rm in rm_list:
+                sum_ += self.importance_factor_rm[rm]
+
+            # Calculate individual allocations without rounding first
+            allocations = []
+            remaining_stock = warehouse_safety_stock
+
+            for rm in rm_list[:-1]:  # Process all but last item
+                allocation = math.floor((self.importance_factor_rm[rm] / sum_) * warehouse_safety_stock)
+                allocations.append(allocation)
+                remaining_stock -= allocation
+
+            # Assign remaining stock to last item
+            allocations.append(remaining_stock)
+
+            # Store results in dictionary
+            for rm, allocation in zip(rm_list, allocations):
+                if rm not in part_safety_stocks:
+                    part_safety_stocks[rm] = {}
+                part_safety_stocks[rm][warehouse] = allocation
+
+        # LP Problem
+        prob = pulp.LpProblem('Warehouse-Parts-Distribution', pulp.LpMaximize)
+
+        # creating the variations for the storages
+        x = pulp.LpVariable.dicts(
+            '',
+            ((w, r) for w, raw_list in self.warehouse_rm.items()
+             for r in raw_list),
+            lowBound=0,
+            cat=pulp.LpInteger
+        )
+
+        # objective function
+        prob += pulp.lpSum(
+            x[(w, r)] * self.parts_storage_cost[r][w]
+            for w, raw_list in self.warehouse_rm.items()
+            for r in raw_list
+        )
+
+        # constraints
+        for p in self.rm_warehouse.keys():
+            prob += pulp.lpSum(
+                [
+                    x[(w, p)] for w in self.rm_warehouse[p]
+
+                ]
+            ) == self.demand_rm[p]
+
+        for p in self.rm_warehouse.keys():
+            for w in self.rm_warehouse[p]:
+                prob += self.parts_inventory_level[p][w] - x[(w, p)] >= part_safety_stocks[p][w]
+
+        # solving
+        prob.solve(pulp.PULP_CBC_CMD(msg=False))
+
+        if pulp.LpStatus[prob.status] == "Optimal":
+            allocation = defaultdict(dict)
+            for v in prob.variables():
+                if v.varValue != 0.0:
+                    allocation[v.name[3:8]][v.name[12:17]] = v.varValue
+            results = {
+                "status": pulp.LpStatus[prob.status],
+                "objective_value": pulp.value(prob.objective),
+                "allocation": dict(allocation),
+            }
+
+            for warehouse, raw_allocation in results["allocation"].items():
+                sum_ = 0
+                for po, demand in raw_allocation.items():
+                    sum_ += demand
+                self.G.nodes[warehouse]["current_capacity"] -= sum_
+                for w in self.warehouses["supplier"]:
+                    if w["id"] == warehouse:
+                        w["current_capacity"] -= sum_
+
+            return results
+
+        return pulp.LpStatus[prob.status]
+
 
     def return_simulation_dictionaries_po(self):
         return [self.temporal_demand_po, self.temporal_cost_po]
@@ -1808,6 +2372,9 @@ class SupplyChainGenerator:
 
     def return_simulation_dictionaries_rm(self):
         return [self.temporal_demand_rm, self.temporal_cost_rm]
+
+    def return_suppliers_parts(self):
+        return self.suppliers_parts
 
     def get_graph(self):
         return self.G
@@ -1947,9 +2514,11 @@ class SupplyChainGenerator:
                     # if (part['valid_from'] <= current_date <= part['valid_till'] and
                     # part['id'] in graph.nodes):
                     part_data = part.copy()
+
                     part_node = graph.nodes[part['id']]
                     part_data['cost'] = part_node['cost']
                     part_data['units_in_chain'] = part_node['units_in_chain']
+
                     parts_data.append(part_data)
 
             if parts_data:

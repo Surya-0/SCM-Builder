@@ -51,6 +51,7 @@ def export_dictionaries(generator, url, version):
     [temporal_po_demand, temporal_po_cost] = generator.return_simulation_dictionaries_po()
     [temporal_sa_demand, temporal_sa_cost] = generator.return_simulation_dictionaries_sa()
     [temporal_rm_demand, temporal_rm_cost] = generator.return_simulation_dictionaries_rm()
+    supplier_parts = generator.return_suppliers_parts
 
     for timestamp, po_demand in temporal_po_demand.items():
         payload_po = {
@@ -116,7 +117,17 @@ def export_dictionaries(generator, url, version):
         }
 
         requests.post(f"{url}/dicts", json=payload_rm)
+
         # time.sleep(1)
+
+    payload_sup_parts = {
+        "version": version,
+        "timestamp": 0,
+        "type" : "SUPPLIERS_PARTS",
+        "dict" : supplier_parts
+    }
+
+    requests.post(f"{url}/dicts", json=payload_sup_parts)
 
 
 def export_to_server(generator, url, version, simulation=False):
@@ -290,7 +301,371 @@ def display_bottleneck_analysis(generator):
                 st.plotly_chart(fig2, use_container_width=True)
 
 
+def analyze_disaster_impact(generator, disaster_results):
+    """Analyze and visualize the impact of a disaster on the supply chain"""
+    st.subheader("🌋 Disaster Impact Analysis")
 
+    # Create tabs for different analysis views
+    cost_tab, demand_tab, capacity_tab = st.tabs([
+        "💰 Cost Propagation",
+        "📈 Demand & Bottlenecks",
+        "🏭 Capacity Analysis"
+    ])
+
+    pre_disaster_ts = disaster_results['timestamp'] - 1
+    post_disaster_ts = disaster_results['timestamp']
+
+    with cost_tab:
+        st.markdown("### Cost Propagation Analysis")
+
+        # Compare product offering costs before and after disaster
+        pre_costs = disaster_results['pre_disaster_cost_po']
+        post_costs = generator.cost_po
+
+        cost_changes = []
+        for po_id in pre_costs:
+            if po_id in post_costs:
+                pct_change = ((post_costs[po_id] - pre_costs[po_id]) / pre_costs[po_id]) * 100
+                cost_changes.append({
+                    'Product ID': po_id,
+                    'Pre-Disaster Cost': pre_costs[po_id],
+                    'Post-Disaster Cost': post_costs[po_id],
+                    'Change (%)': pct_change
+                })
+
+        cost_df = pd.DataFrame(cost_changes)
+        if not cost_df.empty:
+            # Cost propagation visualization
+            fig = px.scatter(cost_df,
+                             x='Pre-Disaster Cost',
+                             y='Post-Disaster Cost',
+                             color='Change (%)',
+                             size=abs(cost_df['Change (%)']),
+                             hover_data=['Product ID'],
+                             title='Cost Propagation in Product Offerings',
+                             color_continuous_scale='RdYlBu_r')
+            fig.add_shape(type='line',
+                          x0=cost_df['Pre-Disaster Cost'].min(),
+                          y0=cost_df['Pre-Disaster Cost'].min(),
+                          x1=cost_df['Pre-Disaster Cost'].max(),
+                          y1=cost_df['Pre-Disaster Cost'].max(),
+                          line=dict(color='gray', dash='dash'))
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Cost impact distribution
+            fig2 = px.histogram(cost_df,
+                                x='Change (%)',
+                                title='Distribution of Cost Changes',
+                                color_discrete_sequence=['#ff7f0e'])
+            st.plotly_chart(fig2, use_container_width=True)
+
+            # Summary metrics
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Average Cost Impact",
+                          f"{cost_df['Change (%)'].mean():.1f}%")
+            with col2:
+                st.metric("Most Affected Product",
+                          f"Product {cost_df.loc[cost_df['Change (%)'].idxmax(), 'Product ID']}",
+                          f"{cost_df['Change (%)'].max():.1f}%")
+            with col3:
+                st.metric("Products Affected",
+                          f"{len(cost_df[cost_df['Change (%)'] > 0])}")
+
+    with demand_tab:
+        st.markdown("### Demand and Bottleneck Analysis")
+
+        # Analyze bottlenecks in product offerings
+        po_bottlenecks = generator.bottleneck_details_po.get(post_disaster_ts, {})
+        st.markdown("#### Product Offering Bottlenecks")
+        if not po_bottlenecks:
+            st.success("✅ No bottlenecks detected in any product offerings! All capacity requirements are being met.")
+        else:
+            po_bottleneck_data = []
+            for po_id, details in po_bottlenecks.items():
+                demand = float(details['demand'])
+                max_capacity = float(details['max_capacity_lam_facs'])
+                bottleneck_factor = float(details['bottleneck_factor'])
+                capacity_ratio = demand / max_capacity
+
+                po_bottleneck_data.append({
+                    'Product ID': po_id,
+                    'Demand': demand,
+                    'Available Capacity': max_capacity,
+                    'Capacity Ratio': capacity_ratio,
+                    'Severity': capacity_ratio / bottleneck_factor,
+                    'Bottleneck Factor': bottleneck_factor
+                })
+
+            if po_bottleneck_data:
+                po_df = pd.DataFrame(po_bottleneck_data)
+
+                # Bottleneck visualization
+                fig = px.scatter(po_df,
+                                 x='Demand',
+                                 y='Available Capacity',
+                                 size='Severity',
+                                 color='Capacity Ratio',
+                                 hover_data=['Product ID', 'Bottleneck Factor'],
+                                 title='Product Offering Bottleneck Analysis',
+                                 labels={
+                                     'Capacity Ratio': 'Demand/Capacity Ratio',
+                                     'Demand': 'Product Demand',
+                                     'Available Capacity': 'Maximum Production Capacity'
+                                 },
+                                 color_continuous_scale='RdYlBu_r')
+
+                # Add reference line for balanced demand/capacity
+                max_val = max(po_df['Demand'].max(), po_df['Available Capacity'].max())
+                fig.add_shape(
+                    type='line',
+                    x0=0, y0=0,
+                    x1=max_val, y1=max_val,
+                    line=dict(color='gray', dash='dash')
+                )
+                fig.update_layout(
+                    annotations=[{
+                        'text': 'Balanced Line (Demand = Capacity)',
+                        'x': max_val / 2,
+                        'y': max_val / 2,
+                        'showarrow': False,
+                        'font': {'size': 10},
+                        'textangle': 45
+                    }]
+                )
+
+                st.plotly_chart(fig, use_container_width=True)
+
+                # Add summary metrics
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    critical_bottlenecks = len(po_df[po_df['Capacity Ratio'] > 1.0])
+                    st.metric(
+                        "Critical Bottlenecks",
+                        critical_bottlenecks,
+                        help="Products where demand exceeds capacity"
+                    )
+                with col2:
+                    avg_utilization = po_df['Capacity Ratio'].mean() * 100
+                    st.metric(
+                        "Avg Capacity Utilization",
+                        f"{avg_utilization:.1f}%"
+                    )
+                with col3:
+                    max_ratio = po_df['Capacity Ratio'].max()
+                    st.metric(
+                        "Max Utilization",
+                        f"{max_ratio * 100:.1f}%"
+                    )
+            else:
+                st.info("No bottlenecks detected in product offerings")
+
+        # Analyze bottlenecks in sub-assemblies
+        sa_bottlenecks = generator.bottleneck_details_sa.get(post_disaster_ts, {})
+        if sa_bottlenecks:
+            st.markdown("#### Sub-Assembly Bottlenecks")
+            sa_bottleneck_data = []
+            for sa_id, details in sa_bottlenecks.items():
+                demand = float(details['demand'])
+                max_capacity = float(details['max_capacity_ext_facs'])
+                bottleneck_factor = float(details['bottleneck_factor'])
+                capacity_ratio = demand / max_capacity
+
+                sa_bottleneck_data.append({
+                    'Sub-Assembly ID': sa_id,
+                    'Demand': demand,
+                    'Available Capacity': max_capacity,
+                    'Capacity Ratio': capacity_ratio,
+                    'Severity': capacity_ratio / bottleneck_factor,
+                    'Bottleneck Factor': bottleneck_factor
+                })
+
+            if sa_bottleneck_data:
+                sa_df = pd.DataFrame(sa_bottleneck_data)
+
+                # Sub-assembly bottleneck visualization
+                fig = px.scatter(sa_df,
+                                 x='Demand',
+                                 y='Available Capacity',
+                                 size='Severity',
+                                 color='Capacity Ratio',
+                                 hover_data=['Sub-Assembly ID', 'Bottleneck Factor'],
+                                 title='Sub-Assembly Bottleneck Analysis',
+                                 labels={
+                                     'Capacity Ratio': 'Demand/Capacity Ratio',
+                                     'Demand': 'Required Demand',
+                                     'Available Capacity': 'Maximum Production Capacity'
+                                 },
+                                 color_continuous_scale='RdYlBu_r')
+
+                # Add reference line for balanced demand/capacity
+                max_val = max(sa_df['Demand'].max(), sa_df['Available Capacity'].max())
+                fig.add_shape(
+                    type='line',
+                    x0=0, y0=0,
+                    x1=max_val, y1=max_val,
+                    line=dict(color='gray', dash='dash')
+                )
+                fig.update_layout(
+                    annotations=[{
+                        'text': 'Balanced Line (Demand = Capacity)',
+                        'x': max_val / 2,
+                        'y': max_val / 2,
+                        'showarrow': False,
+                        'font': {'size': 10},
+                        'textangle': 45
+                    }]
+                )
+
+                st.plotly_chart(fig, use_container_width=True)
+
+                # Add summary metrics
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    critical_bottlenecks = len(sa_df[sa_df['Capacity Ratio'] > 1.0])
+                    st.metric(
+                        "Critical Bottlenecks",
+                        critical_bottlenecks,
+                        help="Sub-assemblies where demand exceeds capacity"
+                    )
+                with col2:
+                    avg_utilization = sa_df['Capacity Ratio'].mean() * 100
+                    st.metric(
+                        "Avg Capacity Utilization",
+                        f"{avg_utilization:.1f}%"
+                    )
+                with col3:
+                    max_ratio = sa_df['Capacity Ratio'].max()
+                    st.metric(
+                        "Max Utilization",
+                        f"{max_ratio * 100:.1f}%"
+                    )
+            else:
+                st.info("No bottlenecks detected in sub-assemblies")
+
+    with capacity_tab:
+        st.markdown("### Facility Capacity Analysis")
+
+        # Analyze facility capacities and their impact
+        capacity_changes = []
+        for facility in generator.facilities['external'] + generator.facilities['lam']:
+            facility_id = facility['id']
+            pre_cap = generator.temporal_simulation_graphs[pre_disaster_ts].nodes[facility_id].get('max_capacity', 0)
+            post_cap = generator.temporal_simulation_graphs[post_disaster_ts].nodes[facility_id].get('max_capacity', 0)
+
+            if pre_cap > 0:
+                pct_change = ((post_cap - pre_cap) / pre_cap) * 100
+                capacity_changes.append({
+                    'Facility ID': facility_id,
+                    'Type': 'External' if facility in generator.facilities['external'] else 'LAM',
+                    'Pre-Disaster Capacity': pre_cap,
+                    'Post-Disaster Capacity': post_cap,
+                    'Change (%)': pct_change,
+                    'Absolute Change': post_cap - pre_cap
+                })
+
+        capacity_df = pd.DataFrame(capacity_changes)
+        if not capacity_df.empty:
+            # Capacity change visualization
+            fig = px.scatter(capacity_df,
+                             x='Pre-Disaster Capacity',
+                             y='Post-Disaster Capacity',
+                             color='Type',
+                             size=abs(capacity_df['Change (%)']),
+                             hover_data=['Facility ID', 'Change (%)'],
+                             title='Facility Capacity Changes')
+
+            # Add reference line
+            fig.add_shape(type='line',
+                          x0=capacity_df['Pre-Disaster Capacity'].min(),
+                          y0=capacity_df['Pre-Disaster Capacity'].min(),
+                          x1=capacity_df['Pre-Disaster Capacity'].max(),
+                          y1=capacity_df['Pre-Disaster Capacity'].max(),
+                          line=dict(color='gray', dash='dash'))
+
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Capacity change distribution by facility type
+            fig2 = px.box(capacity_df,
+                          x='Type',
+                          y='Change (%)',
+                          title='Distribution of Capacity Changes by Facility Type',
+                          points='all',
+                          color='Type')
+            st.plotly_chart(fig2, use_container_width=True)
+
+            # Summary metrics
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Average Capacity Impact",
+                          f"{capacity_df['Change (%)'].mean():.1f}%")
+            with col2:
+                st.metric("Most Affected Facility",
+                          f"Facility {capacity_df.loc[capacity_df['Change (%)'].idxmin(), 'Facility ID']}",
+                          f"{capacity_df['Change (%)'].min():.1f}%")
+            with col3:
+                st.metric("Facilities Affected",
+                          f"{len(capacity_df[capacity_df['Change (%)'] < 0])}")
+
+
+def simulate_disaster_section():
+    """Add disaster simulation section to the Streamlit app"""
+    st.header("🌋 Supply Chain Disaster Simulation")
+
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        disaster_type = st.selectbox(
+            "Select Disaster Type",
+            ["cost", "demand", "capacity"],
+            format_func=lambda x: {
+                "cost": "💰 Raw Material Cost Increase",
+                "demand": "📈 Product Demand Surge",
+                "capacity": "🏭 Facility Capacity Reduction"
+            }[x]
+        )
+
+        impact_description = {
+            "cost": "Increase in raw material costs due to supply shortages or market disruptions",
+            "demand": "Sudden surge in product demand due to market changes or emergency situations",
+            "capacity": "Reduction in facility capacity due to disruptions or resource constraints"
+        }
+
+        st.info(impact_description[disaster_type])
+
+    with col2:
+        impact_factor = st.slider(
+            "Impact Factor",
+            min_value=1.1,
+            max_value=5.0,
+            value=2.0,
+            step=0.1,
+            help="Multiplier for costs/demand or divisor for capacity"
+        )
+
+        affected_percentage = st.slider(
+            "Affected Nodes (%)",
+            min_value=0.1,
+            max_value=1.0,
+            value=0.3,
+            step=0.1,
+            help="Percentage of nodes affected by the disaster"
+        )
+
+    if st.button("🚀 Simulate Disaster", type="primary"):
+        if 'generator' in st.session_state and st.session_state.generator:
+            with st.spinner("Simulating disaster impact..."):
+                # Run the disaster simulation
+                disaster_results = st.session_state.generator.simulate_disaster(
+                    disaster_type=disaster_type,
+                    impact_factor=impact_factor,
+                    affected_nodes_percentage=affected_percentage
+                )
+
+                # Analyze and visualize the results
+                analyze_disaster_impact(st.session_state.generator, disaster_results)
+        else:
+            st.error("Please generate the supply chain data first!")
 
 def main():
     st.title("Supply Chain Data Generation and Simulation")
@@ -317,7 +692,7 @@ def main():
         version = st.text_input("Enter the version")
 
     # Main area tabs
-    tab1, tab2, tab3 = st.tabs(["Generate Data", "Simulation Control", "Supply - chain Simulator"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Generate Data", "Simulation Control", "Supply - chain Simulator", "Simulate Disasters"])
 
     with tab1:
         col1, col2 = st.columns(2)
@@ -412,6 +787,13 @@ def main():
         with col1:
             Sim_button = st.button("Simulate the graph")
             if Sim_button:
+                if not st.session_state.generator:
+                    st.session_state.generator = SupplyChainGenerator(
+                        total_variable_nodes=total_nodes,
+                        base_periods=base_periods,
+                        version=version
+                    )
+
                 st.session_state.generator.create_temporal_simulation()
                 st.success("✅ Simulation Done!")
 
@@ -443,10 +825,12 @@ def main():
                                 st.error(message)
 
 
-            if Sim_button:
-                # Add bottleneck visualization
-                display_bottleneck_analysis(st.session_state.generator)
+        if Sim_button:
+            # Add bottleneck visualization
+            display_bottleneck_analysis(st.session_state.generator)
 
+    with tab4:
+        simulate_disaster_section()
 
 if __name__ == "__main__":
     main()
