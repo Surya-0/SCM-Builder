@@ -11,10 +11,7 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the entrypoint script and make it executable
-COPY docker-entrypoint.sh .
-RUN chmod 755 docker-entrypoint.sh && \
-    chown root:root docker-entrypoint.sh
+
 
 # Copy the rest of the application
 COPY . .
@@ -24,8 +21,7 @@ RUN mkdocs build
 # Expose the port Streamlit runs on
 EXPOSE 8502
 
-# Set the entrypoint script
-ENTRYPOINT ["./docker-entrypoint.sh"]
+
 
 # Command to run the application
 CMD ["streamlit", "run", "Home.py", "--server.address", "0.0.0.0", "--server.port", "8502"]

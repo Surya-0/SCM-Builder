@@ -152,6 +152,7 @@ def export_to_server(generator, url, version, simulation=False):
         # print(update_ops_dict)
 
         st.write(f"Total operations : {total_ops}")
+        st.write(f"Sending to :  {server_url}")
 
         progress = st.progress(0)
         current_progress = 0
