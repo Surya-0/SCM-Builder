@@ -13,7 +13,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the entrypoint script and make it executable
 COPY docker-entrypoint.sh .
-RUN chmod +x docker-entrypoint.sh
+RUN chmod 755 docker-entrypoint.sh && \
+    chown root:root docker-entrypoint.sh
 
 # Copy the rest of the application
 COPY . .

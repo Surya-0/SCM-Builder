@@ -1,7 +1,10 @@
-#!/bin/bash
+#!/bin/sh
+set -e
+
+cd /app
 
 # Copy .env.default to .env if .env doesn't exist
-if [ ! -f .env ]; then
+if [ ! -f .env ] && [ -f .env.default ]; then
     cp .env.default .env
 fi
 
