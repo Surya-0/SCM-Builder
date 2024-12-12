@@ -1,4 +1,3 @@
-        
 import streamlit as st
 import pandas as pd
 import os
@@ -6,13 +5,15 @@ from dotenv import load_dotenv
 import requests
 from data_generator import SupplyChainGenerator
 import time
+import copy
 import plotly.express as px
+import copy
 from datetime import datetime
 
 load_dotenv()
 server_url = os.getenv("SERVER_URL", "http://172.17.149.238/api")
 # server_url = "https://viable-informally-alpaca.ngrok-free.app/api"
-# server_url = "http://192.168.0.106:8000/api"
+# server_url = "http://192.168.0.107:8000/api"
 
 
 st.set_page_config(layout="wide")
@@ -23,6 +24,8 @@ def initialize_session_state():
         st.session_state.generator = None
     if 'current_period' not in st.session_state:
         st.session_state.current_period = 0
+    if 'include_units_in_chain' not in st.session_state:
+        st.session_state.include_units_in_chain = False
 
 
 def export_data(generator, export_dir):
@@ -51,7 +54,7 @@ def export_dictionaries(generator, url, version):
     [temporal_po_demand, temporal_po_cost] = generator.return_simulation_dictionaries_po()
     [temporal_sa_demand, temporal_sa_cost] = generator.return_simulation_dictionaries_sa()
     [temporal_rm_demand, temporal_rm_cost] = generator.return_simulation_dictionaries_rm()
-    # supplier_parts = generator.return_suppliers_parts
+    supplier_parts = generator.return_suppliers_parts()
 
     for timestamp, po_demand in temporal_po_demand.items():
         payload_po = {
@@ -119,15 +122,15 @@ def export_dictionaries(generator, url, version):
         requests.post(f"{url}/dicts", json=payload_rm)
 
         # time.sleep(1)
-    #
-    # payload_sup_parts = {
-    #     "version": version,
-    #     "timestamp": 0,
-    #     "type" : "SUPPLIERS_PARTS",
-    #     "dict" : supplier_parts
-    # }
-    #
-    # requests.post(f"{url}/dicts", json=payload_sup_parts)
+
+    payload_sup_parts = {
+        "version": version,
+        "timestamp": 0,
+        "type" : "SUPPLIERS_PARTS",
+        "dict" : supplier_parts
+    }
+
+    requests.post(f"{url}/dicts", json=payload_sup_parts)
 
 
 def export_to_server(generator, url, version, simulation=False):
@@ -152,64 +155,95 @@ def export_to_server(generator, url, version, simulation=False):
         # print(update_ops_dict)
 
         st.write(f"Total operations : {total_ops}")
+        st.write(f"Pushing into : {server_url}")
 
         progress = st.progress(0)
         current_progress = 0
 
-        for key, list_ops in create_ops_dict.items():
-            for i in range(0, len(list_ops), 1000):
-                bulk_create_payload = {
-                    "version": version,
-                    "action": "bulk_create",
-                    "type": "schema",
-                    "timestamp": key,
-                    "payload": []
-                }
-                for op in list_ops[i:i + 1000]:
-                    new_ops = op['payload'].copy()
-                    new_ops['properties'] = {}
-                    # if i == 0:0
-                    #     st.write(op)
-                    for key,val in op['payload']['properties'].items():
-                        if key != 'units_in_chain':
-                            new_ops['properties'][key] = val
-                    # bulk_create_payload['payload'].append(op['payload'])
-                    bulk_create_payload['payload'].append(new_ops)
-                requests.post(f"{url}/schema/live/update", json=bulk_create_payload)
-                time.sleep(1)
+        # if simulation:
+        #     export_simulation_data(generator, url, version)
 
-                current_progress += len(list_ops[i:i + 1000])
-                progress.progress(current_progress / total_ops)
+        # Add toggle for units_in_chain
+        if not st.session_state.include_units_in_chain:
+            # Current implementation (excluding units_in_chain)
+            for key, list_ops in create_ops_dict.items():
+                for i in range(0, len(list_ops), 1000):
+                    bulk_create_payload = {
+                        "version": version,
+                        "action": "bulk_create",
+                        "type": "schema",
+                        "timestamp": key,
+                        "payload": []
+                    }
+                    for op in list_ops[i:i + 1000]:
+                        new_ops = copy.deepcopy(op['payload'])
 
-            # st.write(f"Timestamp {key} has been sent to the server for creation")
+                        new_ops['properties'] = {k: v for k, v in new_ops['properties'].items() if
+                                                 k != 'units_in_chain'}
 
-        for key, list_ops in update_ops_dict.items():
-            for i in range(0, len(list_ops), 1000):
-                bulk_update_payload = {
-                    "version": version,
-                    "action": "bulk_update",
-                    "type": "schema",
-                    "timestamp": key,
-                    "payload": []
-                }
-                for op in list_ops[i:i + 1000]:
-                    new_ops = op['payload'].copy()
-                    new_ops['properties'] = {}
-                    for key, val in op['payload']['properties'].items():
-                        if key != 'units_in_chain':
-                            new_ops['properties'][key] = val
+                        bulk_create_payload['payload'].append(new_ops)
+                    requests.post(f"{url}/schema/live/update", json=bulk_create_payload)
+                    time.sleep(1)
 
-                    # bulk_create_payload['payload'].append(op['payload'])
-                    bulk_update_payload['payload'].append(new_ops)
+                    current_progress += len(list_ops[i:i + 1000])
+                    progress.progress(current_progress / total_ops)
 
-                    # bulk_update_payload['payload'].append(op['payload'])
-                requests.post(f"{url}/schema/live/update", json=bulk_update_payload)
-                time.sleep(1)
+            for key, list_ops in update_ops_dict.items():
+                for i in range(0, len(list_ops), 1000):
+                    bulk_update_payload = {
+                        "version": version,
+                        "action": "bulk_update",
+                        "type": "schema",
+                        "timestamp": key,
+                        "payload": []
+                    }
+                    for op in list_ops[i:i + 1000]:
+                        new_ops = copy.deepcopy(op['payload'])
 
-                current_progress += len(list_ops[i:i + 1000])
-                progress.progress(current_progress / total_ops)
+                        new_ops['properties'] = {k: v for k, v in new_ops['properties'].items() if
+                                                 k != 'units_in_chain'}
 
-            # st.write(f"Timestamp {key} has been sent to the server for updating")
+                        bulk_update_payload['payload'].append(new_ops)
+                    requests.post(f"{url}/schema/live/update", json=bulk_update_payload)
+                    time.sleep(1)
+
+                    current_progress += len(list_ops[i:i + 1000])
+                    progress.progress(current_progress / total_ops)
+        else:
+            # Original implementation (including units_in_chain)
+            for key, list_ops in create_ops_dict.items():
+                for i in range(0, len(list_ops), 1000):
+                    bulk_create_payload = {
+                        "version": version,
+                        "action": "bulk_create",
+                        "type": "schema",
+                        "timestamp": key,
+                        "payload": []
+                    }
+                    for op in list_ops[i:i + 1000]:
+                        bulk_create_payload['payload'].append(op['payload'])
+                    requests.post(f"{url}/schema/live/update", json=bulk_create_payload)
+                    time.sleep(1)
+
+                    current_progress += len(list_ops[i:i + 1000])
+                    progress.progress(current_progress / total_ops)
+
+            for key, list_ops in update_ops_dict.items():
+                for i in range(0, len(list_ops), 1000):
+                    bulk_update_payload = {
+                        "version": version,
+                        "action": "bulk_update",
+                        "type": "schema",
+                        "timestamp": key,
+                        "payload": []
+                    }
+                    for op in list_ops[i:i + 1000]:
+                        bulk_update_payload['payload'].append(op['payload'])
+                    requests.post(f"{url}/schema/live/update", json=bulk_update_payload)
+                    time.sleep(1)
+
+                    current_progress += len(list_ops[i:i + 1000])
+                    progress.progress(current_progress / total_ops)
 
         if simulation:
             export_dictionaries(generator, url, version)
@@ -219,6 +253,7 @@ def export_to_server(generator, url, version, simulation=False):
 
     except Exception as e:
         return False, f"Error exporting data: {str(e)}"
+
 
 def display_bottleneck_analysis(generator):
     if not hasattr(generator, 'bottleneck_details_sa') or not hasattr(generator, 'bottleneck_details_po'):
@@ -290,7 +325,6 @@ def display_bottleneck_analysis(generator):
                     'Capacity Ratio': details['demand'] / details['max_capacity_ext_facs']
                 })
 
-
         if sa_data:
             df_sa = pd.DataFrame(sa_data)
             df_sa["Factored Max Capacity"] = df_sa["Max Capacity"] * df_sa["Bottleneck Factor"]
@@ -342,11 +376,22 @@ def analyze_disaster_impact(generator, disaster_results):
         cost_changes = []
         for po_id in pre_costs:
             if po_id in post_costs:
-                pct_change = ((post_costs[po_id] - pre_costs[po_id]) / pre_costs[po_id]) * 100
+                pre_cost = pre_costs[po_id]
+                post_cost = post_costs[po_id]
+
+                # Handle cases where pre_cost is zero
+                if pre_cost == 0:
+                    if post_cost > 0:
+                        pct_change = 1000  # Using 1000% instead of infinity for better visualization
+                    else:
+                        pct_change = 0
+                else:
+                    pct_change = ((post_cost - pre_cost) / pre_cost) * 100
+
                 cost_changes.append({
                     'Product ID': po_id,
-                    'Pre-Disaster Cost': pre_costs[po_id],
-                    'Post-Disaster Cost': post_costs[po_id],
+                    'Pre-Disaster Cost': pre_cost,
+                    'Post-Disaster Cost': post_cost,
                     'Change (%)': pct_change
                 })
 
@@ -684,6 +729,127 @@ def simulate_disaster_section():
         else:
             st.error("Please generate the supply chain data first!")
 
+
+def display_warehouse_analysis():
+    tab1, tab2 = st.tabs(["LAM Warehouses", "Supplier Warehouses"])
+
+    with tab1:
+        if st.session_state.warehouse_po == "Infeasible":
+            st.warning("The Problem is Infeasible!")
+        else:
+            allocations = st.session_state.warehouse_po["allocation"]
+
+            selected_warehouse = st.selectbox(
+                "Select Warehouse",
+                allocations.keys(),
+                key="lam_warehouse_select",
+            )
+
+            # Display allocation data for the selected warehouse
+            display_data = allocations[selected_warehouse]
+            # st.write(display_data)
+            cols = st.columns(len(display_data))
+
+            # Display metrics for the selected warehouse
+            for col, (key, value) in zip(cols, display_data.items()):
+                col.metric(key, int(value))
+
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric(
+                    label="Capacity",
+                    value=st.session_state.warehouse_lam_df[
+                        st.session_state.warehouse_lam_df["Warehouse_ID"] == selected_warehouse]["Capacity"]
+                )
+
+            with col2:
+                st.metric(
+    label="Updated Capacity",
+    value=int(
+        st.session_state.warehouse_lam_df[
+            st.session_state.warehouse_lam_df["Warehouse_ID"] == selected_warehouse]["Updated_Capacity"].iloc[0]
+    )
+)
+
+            # Filter data for allocated warehouses
+            allocated_warehouses = list(allocations.keys())
+            filtered_df = st.session_state.warehouse_lam_df[
+                st.session_state.warehouse_lam_df["Warehouse_ID"].isin(allocated_warehouses)
+            ]
+
+            # Create a bar plot for capacity and updated capacity
+            fig = px.bar(
+                filtered_df,
+                x="Warehouse_ID",
+                y=["Capacity", "Updated_Capacity"],
+                barmode="group",
+                title="Changes in the capacity of the allocated warehouses",
+                labels={"value": "Capacity", "variable": "Type"},
+            )
+
+            # Display the plot
+            st.plotly_chart(fig)
+
+
+    with tab2:
+
+        if st.session_state.warehouse_rm == "Infeasible":
+            st.warning("The Problem is infeasible!")
+        else:
+            allocations = st.session_state.warehouse_rm["allocation"]
+
+            selected_warehouse = st.selectbox(
+                "Select Warehouse",
+                allocations.keys(),
+                key="supplier_warehouse_select",
+            )
+
+            # Display allocation data for the selected warehouse
+            display_data = allocations[selected_warehouse]
+            # st.write(display_data)
+            cols = st.columns(len(display_data))
+
+            # Display metrics for the selected warehouse
+            for col, (key, value) in zip(cols, display_data.items()):
+                col.metric(key, int(value))
+
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric(
+                    label="Capacity",
+                    value=st.session_state.warehouse_supplier_df[
+                        st.session_state.warehouse_supplier_df["Warehouse_ID"] == selected_warehouse]["Capacity"]
+                )
+
+            with col2:
+                st.metric(
+                    label="Updated Capacity",
+                    value=int(
+                        st.session_state.warehouse_supplier_df[
+                            st.session_state.warehouse_supplier_df["Warehouse_ID"] == selected_warehouse]["Updated_Capacity"].iloc[0]
+                    )
+                )
+
+            # Filter data for allocated warehouses
+            allocated_warehouses = list(allocations.keys())
+            filtered_df = st.session_state.warehouse_supplier_df[
+                st.session_state.warehouse_supplier_df["Warehouse_ID"].isin(allocated_warehouses)
+            ]
+
+            # Create a bar plot for capacity and updated capacity
+            fig = px.bar(
+                filtered_df,
+                x="Warehouse_ID",
+                y=["Capacity", "Updated_Capacity"],
+                barmode="group",
+                title="Changes in the capacity of the allocated warehouses",
+                labels={"value": "Capacity", "variable": "Type"},
+            )
+
+            # Display the plot
+            st.plotly_chart(fig)
+
+
 def main():
     st.title("Supply Chain Data Generation and Simulation")
     url = server_url
@@ -707,9 +873,16 @@ def main():
             step=1
         )
         version = st.text_input("Enter the version")
+        st.session_state.include_units_in_chain = st.checkbox(
+            'Include units_in_chain in payload',
+            value=st.session_state.include_units_in_chain,
+            key='units_in_chain_toggle'
+        )
 
     # Main area tabs
-    tab1, tab2, tab3, tab4 = st.tabs(["Generate Data", "Simulation Control", "Supply - chain Simulator", "Simulate Disasters"])
+
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Generate Data", "Simulation Control", "Supply - chain Simulator", "Simulate Disasters", "Simulate Warehousing"])
+
 
     with tab1:
         col1, col2 = st.columns(2)
@@ -814,7 +987,6 @@ def main():
                 st.session_state.generator.create_temporal_simulation()
                 st.success("✅ Simulation Done!")
 
-
         with col2:
             col3, col4 = st.columns(2)
             with col3:
@@ -841,7 +1013,6 @@ def main():
                             else:
                                 st.error(message)
 
-
         if Sim_button:
             # Add bottleneck visualization
             display_bottleneck_analysis(st.session_state.generator)
@@ -849,6 +1020,104 @@ def main():
     with tab4:
         simulate_disaster_section()
 
+    with tab5:
+
+        if "flag" not in st.session_state:
+            st.session_state.flag = 0
+
+        if "warehouse_lam_df" not in st.session_state:
+            st.session_state.warehouse_lam_df = pd.DataFrame(
+                [],
+                columns=[
+                    "Warehouse_ID",
+                    "Capacity",
+                    "Updated_Capacity",
+                ]
+            )
+
+        if "warehouse_supplier_df" not in st.session_state:
+            st.session_state.warehouse_supplier_df = pd.DataFrame(
+                [],
+                columns=[
+                    "Warehouse_ID",
+                    "Capacity",
+                    "Updated_Capacity",
+                ]
+            )
+
+        Sim_button_2 = st.button("Simulate the graph", key="Sim_button_2")
+
+        if st.session_state.generator is None:
+            st.info("Please generate initial supply chain data first.")
+        else:
+            # Store the original state of LAM warehouses in session_state
+            if "lam_warehouse" not in st.session_state:
+                st.session_state.lam_warehouse = copy.deepcopy(
+                    st.session_state.generator.warehouses["lam"]
+                )
+
+            if "lam_warehouse_updated" not in st.session_state:
+                st.session_state.lam_warehouse_updated = None
+
+            if "supplier_warehouse" not in st.session_state:
+                st.session_state.supplier_warehouse = copy.deepcopy(
+                    st.session_state.generator.warehouses["supplier"]
+                )
+
+            if "supplier_warehouse_updated" not in st.session_state:
+                st.session_state.supplier_warehouse_updated = None
+
+            if Sim_button_2:
+                st.session_state.flag = 1
+                st.session_state.generator.create_simulation()
+                st.success("✅ Simulation Done!")
+
+                if "warehouse_po" not in st.session_state:
+                    st.session_state.warehouse_po = (
+                        st.session_state.generator.simulate_po_warehouse_storage()
+                    )
+
+                    # Store the updated state of LAM warehouses
+                    st.session_state.lam_warehouse_updated = copy.deepcopy(
+                        st.session_state.generator.warehouses["lam"]
+                    )
+
+                    # Update the dataframe with the new capacities
+                    for warehouse in st.session_state.lam_warehouse:
+                        new_row = {
+                            "Warehouse_ID": warehouse["id"],
+                            "Capacity": warehouse["current_capacity"],
+                        }
+                        for up_warehouse in st.session_state.lam_warehouse_updated:
+                            if up_warehouse["id"] == warehouse["id"]:
+                                new_row["Updated_Capacity"] = up_warehouse["current_capacity"]
+                        st.session_state.warehouse_lam_df.loc[len(st.session_state.warehouse_lam_df)] = new_row
+
+                if "warehouse_rm" not in st.session_state:
+                    st.session_state.warehouse_rm = (
+                        st.session_state.generator.simulate_raw_warehouse_storage()
+                    )
+
+                    # Store the updated state of LAM warehouses
+                    st.session_state.supplier_warehouse_updated = copy.deepcopy(
+                        st.session_state.generator.warehouses["supplier"]
+                    )
+
+                    # Update the dataframe with the new capacities
+                    for warehouse in st.session_state.supplier_warehouse:
+                        new_row = {
+                            "Warehouse_ID": warehouse["id"],
+                            "Capacity": warehouse["current_capacity"],
+                        }
+                        for up_warehouse in st.session_state.supplier_warehouse_updated:
+                            if up_warehouse["id"] == warehouse["id"]:
+                                new_row["Updated_Capacity"] = up_warehouse["current_capacity"]
+                        st.session_state.warehouse_supplier_df.loc[len(st.session_state.warehouse_supplier_df)] = new_row
+
+            if st.session_state.flag == 1:
+                display_warehouse_analysis()
+
+
+
 if __name__ == "__main__":
     main()
-

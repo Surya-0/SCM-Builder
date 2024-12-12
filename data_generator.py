@@ -420,6 +420,7 @@ class SupplyChainGenerator:
         self.warehouses_parts = defaultdict(set)  # Map each warehouse with the set of parts it gets connected to
         self.suppliers_parts = defaultdict(
             set)  # Its a derived dictionary - map each supplier with the set of parts connected to the warehouses it supplies
+        self.suppliers_parts_ret = defaultdict(list) # Suppliers - parts mapping using key as string and value as list
 
         self.bottleneck_details_sa = defaultdict(dict)
         self.bottleneck_details_po = defaultdict(dict)
@@ -470,10 +471,11 @@ class SupplyChainGenerator:
             for warehouse in val:
                 self.suppliers_parts[key].update(self.warehouses_parts[warehouse])
 
-
         for key,val in self.suppliers_parts.items():
-            # print(type(val))
             self.suppliers_parts[key] = list(val)
+
+
+        # print(self.suppliers_parts)
 
 
         # json_data_s_p = json.dumps(self.suppliers_parts)
@@ -989,7 +991,7 @@ class SupplyChainGenerator:
                         "lead_time": random.uniform(*TRANSPORTATION_TIME_RANGE),
                     }
 
-
+                    # print("Supplier - warehouse connection needs to be here ",supplier['id']," ",warehouse['id'])
                     self.suppliers_warehouses[supplier['id']].add(warehouse['id'])
 
                     self.G.add_edge(supplier['id'], warehouse['id'], **edge_data)
@@ -1162,7 +1164,7 @@ class SupplyChainGenerator:
                     "storage_cost": random.uniform(*COST_RANGE),
                 }
 
-
+                self.warehouses_parts[warehouse['id']].add(part["id"])
                 if part["type"] == "raw":
                     self.rm_warehouse[part["id"]].append(warehouse["id"])
                     self.warehouse_rm[warehouse["id"]].append(part["id"])
@@ -2123,6 +2125,10 @@ class SupplyChainGenerator:
             num_affected = int(len(all_facilities) * affected_nodes_percentage)
             affected_facilities = random.sample(all_facilities, num_affected)
 
+            # Track which facilities were affected to update the dictionaries
+            affected_lam_facilities = set()
+            affected_ext_facilities = set()
+
             for facility in affected_facilities:
                 facility_id = facility['id']
                 old_capacity = self.temporal_simulation_graphs[self.simulation_timestamp - 1].nodes[facility_id][
@@ -2138,6 +2144,54 @@ class SupplyChainGenerator:
                 )
                 self.temporal_simulation_graphs[self.simulation_timestamp].nodes[facility_id][
                     'max_capacity'] = new_capacity
+
+                # Track which type of facility was affected
+                if facility in self.facilities['lam']:
+                    affected_lam_facilities.add(facility_id)
+                else:
+                    affected_ext_facilities.add(facility_id)
+
+            # Update LAM facility capacities in po_Lam_facility dictionary
+            for po, fac_list in self.po_Lam_facility.items():
+                new_list = []
+                for fac in fac_list:
+                    facility_id = fac[0]
+                    if facility_id in affected_lam_facilities:
+                        # This facility was affected by the disaster
+                        new_capacity = self.temporal_simulation_graphs[self.simulation_timestamp].nodes[facility_id]['max_capacity']
+                        new_list.append((facility_id, new_capacity))
+                    else:
+                        # This facility was not affected
+                        new_list.append(fac)
+                self.po_Lam_facility[po] = new_list
+
+            # Recalculate sum of max capacities for LAM facilities
+            self.sum_max_capacity_lam_facility_for_po = defaultdict(float)
+            for po, fac_list in self.po_Lam_facility.items():
+                self.sum_max_capacity_lam_facility_for_po[po] = sum(
+                    fac[1] for fac in fac_list
+                )
+
+            # Update external facility capacities in subassembly_ext_facility dictionary
+            for sa, fac_list in self.subassembly_ext_facility.items():
+                new_list = []
+                for fac in fac_list:
+                    facility_id = fac[0]
+                    if facility_id in affected_ext_facilities:
+                        # This facility was affected by the disaster
+                        new_capacity = self.temporal_simulation_graphs[self.simulation_timestamp].nodes[facility_id]['max_capacity']
+                        new_list.append((facility_id, new_capacity))
+                    else:
+                        # This facility was not affected
+                        new_list.append(fac)
+                self.subassembly_ext_facility[sa] = new_list
+
+            # Recalculate sum of max capacities for external facilities
+            self.sum_max_capacity_ext_facility_for_sa = defaultdict(float)
+            for sa, fac_list in self.subassembly_ext_facility.items():
+                self.sum_max_capacity_ext_facility_for_sa[sa] = sum(
+                    fac[1] for fac in fac_list
+                )
 
         # Propagate the changes through the supply chain
         self.simulate_ext_fac_sa_demand()
@@ -2260,7 +2314,7 @@ class SupplyChainGenerator:
                 self.G.nodes[warehouse]["current_capacity"] += sum_
                 for w in self.warehouses["lam"]:
                     if w["id"] == warehouse:
-                        w["current_capacity"] -= sum_
+                        w["current_capacity"] += sum_
 
             return results
 
